@@ -118,11 +118,24 @@ def call_gemini(prompt, temperature=0.4):
         result = {}
 
     if not response.ok:
+        app.logger.warning(
+            "Gemini request failed: status=%s model=%s referer=%s message=%s",
+            response.status_code,
+            model,
+            http_referer or "<missing>",
+            result.get("error", {}).get("message") if isinstance(result, dict) else None,
+        )
         return None, (gemini_error_message(response.status_code, result), response.status_code)
 
     try:
         text = result["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, TypeError):
+        app.logger.warning(
+            "Gemini returned an empty or malformed response: model=%s referer=%s payload_keys=%s",
+            model,
+            http_referer or "<missing>",
+            list(result.keys()) if isinstance(result, dict) else type(result).__name__,
+        )
         return None, ("Gemini returned an empty response. Please try again.", 502)
 
     return text, None
@@ -402,6 +415,14 @@ water_need values: "High", "Medium", or "Low"
         if error:
             message, status_code = error
             if should_use_ai_fallback(status_code):
+                app.logger.warning(
+                    "Falling back for /ai-recommend: status=%s area=%s season=%s language=%s message=%s",
+                    status_code,
+                    area,
+                    season,
+                    language,
+                    message,
+                )
                 return jsonify(fallback_ai_recommendations(area, season, language))
             return jsonify({"error": message}), status_code
 
@@ -464,6 +485,15 @@ Rules:
         if error:
             message, status_code = error
             if should_use_ai_fallback(status_code):
+                app.logger.warning(
+                    "Falling back for /ai-follow-up: status=%s area=%s season=%s language=%s crops=%s message=%s",
+                    status_code,
+                    area,
+                    season,
+                    language,
+                    ", ".join(crops),
+                    message,
+                )
                 crops_text = ", ".join(crops)
                 if language == "hindi":
                     return jsonify({
