@@ -1,0 +1,87 @@
+.banner {
+  height: 90vh;
+  margin-top: -30px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.banner__title_head {
+  text-align: center;
+  font-weight: 700;
+  font-size: 80px;
+  color: #fff;
+  margin: 0 10px 20px;
+  padding-bottom: 10px;
+  border-bottom: 3px solid whitesmoke;
+}
+
+/* ✅ NEW instead of <font> */
+.highlight {
+  color: tomato;
+}
+
+.banner__title_tail {
+  text-align: center;
+  margin-top: 10px;
+  color: azure;
+  margin: 0 10px;
+}
+
+.banner__buttons {
+  margin-top: 25px;
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.banner__button {
+  color: white !important;
+  background-color: rgba(0, 0, 0, 0.8) !important;
+  padding: 10px 18px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  transition: all 0.2s ease-in-out !important;
+  border-radius: 6px !important;
+}
+
+/* 🔥 NEW HOVER EFFECT */
+.banner__button:hover {
+  background-color: rgba(255, 255, 255, 0.15) !important;
+  border: 1px solid white !important;
+  transform: translateY(-3px);
+}
+
+/* ================= SOCIAL ICONS ================= */
+
+.banner__socialMedia {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  gap: 15px;
+}
+
+.social_icon_linkedin,
+.social_icon_github {
+  font-size: 22px;
+  background-color: rgba(0, 0, 0, 0.9);
+  padding: 10px;
+  border-radius: 50%;
+  transition: all 0.25s ease;
+  cursor: pointer;
+}
+
+.social_icon_linkedin {
+  color: #0077b5;
+}
+
+.social_icon_github {
+  color: #6cc644;
+}
+
+.social_icon_linkedin:hover,
+.social_icon_github:hover {
+  background-color: #fff;
+  transform: scale(1.15);
+}
