@@ -1897,10 +1897,31 @@ function cleanAdviceReason(reason) {
   return (reason || '').replace(/^Rule-based fallback(?:\s+for\s+[^:]+)?:\s*/i, '');
 }
 
+function getAICropPlaceholderMeta(cropKey, cropName) {
+  const fallbackName = cropName || "Crop";
+  const placeholderMap = {
+    wheat: { icon: "🌾", accent: "grain", label: "Wheat Field" },
+    mustard: { icon: "🌼", accent: "flower", label: "Mustard Field" },
+    chickpea: { icon: "🌿", accent: "pulse", label: "Chickpea Field" },
+    lentil: { icon: "🌱", accent: "pulse", label: "Lentil Field" },
+    rice: { icon: "🌾", accent: "grain", label: "Rice Field" },
+    maize: { icon: "🌽", accent: "grain", label: "Maize Field" },
+    cotton: { icon: "☁", accent: "fiber", label: "Cotton Field" },
+    pigeonpeas: { icon: "🌿", accent: "pulse", label: "Pigeon Pea Field" },
+  };
+
+  return placeholderMap[cropKey] || {
+    icon: "🌱",
+    accent: "default",
+    label: `${fallbackName} Crop`,
+  };
+}
+
 function AICropCard({ crop, index, language }) {
   const ui = getAdvisorUi(language);
   const cropKey = crop.crop?.toLowerCase().replace(/\(.*?\)/g,"").replace(/\s+/g,"").replace(/[^a-z]/g,"").trim();
   const imgSrc  = CROP_IMAGE_MAP[cropKey] || null;
+  const placeholderMeta = getAICropPlaceholderMeta(cropKey, crop.crop);
   const confColor = crop.confidence === 'High' ? 'high' : crop.confidence === 'Medium' ? 'mid' : 'low';
   const fitColor  = crop.season_fit  === 'Perfect' ? 'high' : crop.season_fit === 'Good' ? 'mid' : 'low';
   const fallback = isFallbackCrop(crop);
@@ -1919,7 +1940,10 @@ function AICropCard({ crop, index, language }) {
       {imgSrc ? (
         <img src={imgSrc} alt={crop.crop} className="ai-card__img" />
       ) : (
-        <div className="ai-card__img-placeholder"><span className="ai-card__img-placeholder-icon">Crop</span></div>
+        <div className={`ai-card__img-placeholder ai-card__img-placeholder--${placeholderMeta.accent}`}>
+          <span className="ai-card__img-placeholder-icon" aria-hidden="true">{placeholderMeta.icon}</span>
+          <span className="ai-card__img-placeholder-title">{placeholderMeta.label}</span>
+        </div>
       )}
       <div className="ai-card__img-overlay" />
       <div className="ai-card__img-label">{crop.crop}</div>
