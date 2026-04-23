@@ -653,11 +653,18 @@ function FertilizerResult({ data, formData, onBack }) {
         <div className="fr-result__hero-text">
           <div className="fr-result__eyebrow">{ui.recommendedFertilizer}</div>
           <h1 className="fr-result__name">{fert.title}</h1>
-          <div className={`fr-conf-pill fr-conf-pill--${confClass}`}>
-            {winningConf.toFixed(2)}% {ui.confidence}
+          <div className="fr-result__hero-pills">
+            <div className={`fr-conf-pill fr-conf-pill--${confClass}`}>
+              {winningConf.toFixed(2)}% {ui.confidence}
+            </div>
+            <div className={`fr-suitability-pill fr-suitability-pill--${suitability.tone}`}>
+              {suitability.label}
+            </div>
           </div>
-          <div className={`fr-suitability-pill fr-suitability-pill--${suitability.tone}`}>
-            {suitability.label}
+          <div className="fr-result__hero-meta">
+            <span className="fr-result__hero-meta-item">
+              {ui.supportedBy} <strong>{agreeingModels.join(', ') || ui.noConsensus}</strong>
+            </span>
           </div>
         </div>
       </div>
@@ -667,6 +674,7 @@ function FertilizerResult({ data, formData, onBack }) {
           <strong>{suitability.label}</strong>
           <span>{suitability.note}</span>
         </div>
+        <div className="fr-result__summary">
         {agreeingModels.length > 0 && (
           <div className="fr-agree-row">
             <span className="fr-agree-row__icon" aria-hidden="true">✓</span>
@@ -679,6 +687,8 @@ function FertilizerResult({ data, formData, onBack }) {
             ⚠ {ui.lowConfidence}
           </div>
         )}
+
+        </div>
 
         <p className="fr-result__desc">{fert.description}</p>
 
