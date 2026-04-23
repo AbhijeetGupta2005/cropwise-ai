@@ -68,6 +68,27 @@ def safe_float(value, name):
         raise ValueError(f"Invalid value for '{name}': {value!r}")
 
 
+def require_json_object(data):
+    if not isinstance(data, dict):
+        raise ValueError("Request body must be a JSON object.")
+
+
+def validate_required_fields(data, fields):
+    missing = [field for field in fields if field not in data]
+    if missing:
+        raise ValueError(f"Missing required field(s): {', '.join(missing)}")
+
+
+def validate_numeric_ranges(data, range_map):
+    validated = {}
+    for field, (min_value, max_value) in range_map.items():
+        value = safe_float(data[field], field)
+        if value < min_value or value > max_value:
+            raise ValueError(f"'{field}' must be between {min_value} and {max_value}.")
+        validated[field] = value
+    return validated
+
+
 def gemini_error_message(status_code, result):
     message = (
         result.get("error", {}).get("message")
@@ -327,6 +348,25 @@ def fertilizer_prediction(input_data):
 def health_check():
     return jsonify({"status": "ok"}), 200
 
+
+@app.route("/", methods=["GET"])
+def api_root():
+    return jsonify(
+        {
+            "service": "CropWise AI API",
+            "status": "ok",
+            "message": "Backend is running. Use the frontend app for the full experience.",
+            "endpoints": [
+                "/health",
+                "/predict_crop",
+                "/predict_fertilizer",
+                "/ai-recommend",
+                "/ai-follow-up",
+                "/weather",
+            ],
+        }
+    ), 200
+
 # Crop Prediction
 @app.route("/predict_crop", methods=["POST"])
 def predict_crop():
@@ -335,12 +375,25 @@ def predict_crop():
         print("CROP INPUT:", data)
 
         fields = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
-        input_list = [safe_float(data[f], f) for f in fields]
+        require_json_object(data)
+        validate_required_fields(data, fields)
+        validated = validate_numeric_ranges(data, {
+            "N": (0, 140),
+            "P": (0, 140),
+            "K": (0, 205),
+            "temperature": (8, 44),
+            "humidity": (14, 100),
+            "ph": (0, 14),
+            "rainfall": (20, 300),
+        })
+        input_list = [validated[f] for f in fields]
         input_data = np.array(input_list, dtype=np.float64).reshape(1, -1)
 
         result = crop_prediction(input_data)
         return jsonify(result)
 
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500
@@ -352,6 +405,7 @@ def predict_fertilizer():
     try:
         data = request.get_json()
         print("FERTILIZER INPUT:", data)
+        require_json_object(data)
 
         # Frontend sends pre-encoded Soil Type and Crop Type as integers
         required = [
@@ -359,12 +413,18 @@ def predict_fertilizer():
             "Soil Type", "Crop Type",
             "Nitrogen", "Potassium", "Phosphorous",
         ]
-
-        for r in required:
-            if r not in data:
-                return jsonify({"error": f"'{r}' is missing from request"}), 400
-
-        input_list = [safe_float(data[f], f) for f in required]
+        validate_required_fields(data, required)
+        validated = validate_numeric_ranges(data, {
+            "Temperature": (0, 50),
+            "Humidity": (0, 100),
+            "Moisture": (0, 100),
+            "Soil Type": (0, 4),
+            "Crop Type": (0, 10),
+            "Nitrogen": (0, 140),
+            "Potassium": (0, 205),
+            "Phosphorous": (0, 140),
+        })
+        input_list = [validated[f] for f in required]
         input_data = np.array(input_list, dtype=np.float64).reshape(1, -1)
 
         print("INPUT ARRAY:", input_data)
@@ -372,6 +432,8 @@ def predict_fertilizer():
         result = fertilizer_prediction(input_data)
         return jsonify(result)
 
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         import traceback; traceback.print_exc()
         return jsonify({"error": str(e)}), 500

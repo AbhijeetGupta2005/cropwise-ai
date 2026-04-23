@@ -1,0 +1,160 @@
+<svg width="1400" height="920" viewBox="0 0 1400 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1400" y2="920" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FBFF"/>
+      <stop offset="1" stop-color="#EEF5FF"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F7FAFF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4CC9F0"/>
+      <stop offset="1" stop-color="#4361EE"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12V0Z" fill="#4C6FFF"/>
+    </marker>
+    <marker id="arrowMuted" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0 0L12 6L0 12V0Z" fill="#7AA5D8"/>
+    </marker>
+    <style>
+      .title { font: 700 36px 'Segoe UI', Arial, sans-serif; fill: #10213D; }
+      .subtitle { font: 500 16px 'Segoe UI', Arial, sans-serif; fill: #5E7091; }
+      .section { font: 700 26px 'Segoe UI', Arial, sans-serif; fill: #173056; }
+      .box-title { font: 700 22px 'Segoe UI', Arial, sans-serif; fill: #143055; }
+      .box-sub { font: 500 15px 'Segoe UI', Arial, sans-serif; fill: #617391; }
+      .small { font: 600 14px 'Segoe UI', Arial, sans-serif; fill: #365173; }
+      .mono { font: 600 13px 'Consolas', 'Courier New', monospace; fill: #365173; }
+      .label { font: 700 16px 'Segoe UI', Arial, sans-serif; fill: #28476F; }
+      .note { font: 500 14px 'Segoe UI', Arial, sans-serif; fill: #566985; }
+      .chip { font: 700 12px 'Segoe UI', Arial, sans-serif; fill: #3C5A82; }
+    </style>
+  </defs>
+
+  <rect width="1400" height="920" rx="28" fill="url(#bg)"/>
+
+  <text x="70" y="76" class="title">CropWise AI System Architecture</text>
+  <text x="70" y="108" class="subtitle">React frontend + Flask API + ML recommendation + Gemini advisory + free deployment on Vercel and Render</text>
+
+  <!-- Outer layers -->
+  <rect x="50" y="140" width="310" height="710" rx="28" fill="url(#panel)" stroke="#C9D8F2" stroke-width="2"/>
+  <text x="80" y="190" class="section">Client Layer</text>
+
+  <rect x="390" y="140" width="620" height="710" rx="28" fill="url(#panel)" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="420" y="190" class="section">Application Layer</text>
+
+  <rect x="1040" y="140" width="310" height="710" rx="28" fill="url(#panel)" stroke="#C9D8F2" stroke-width="2"/>
+  <text x="1070" y="190" class="section">External Services</text>
+
+  <!-- Client layer -->
+  <rect x="80" y="230" width="250" height="110" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="108" y="274" class="box-title">Farmer / User</text>
+  <text x="108" y="304" class="box-sub">Mobile or desktop browser</text>
+
+  <rect x="80" y="380" width="250" height="180" rx="22" fill="#F7FBFF" stroke="#A9C7F1" stroke-width="2"/>
+  <rect x="100" y="404" width="210" height="34" rx="10" fill="url(#accent)" opacity="0.12"/>
+  <text x="115" y="427" class="box-title">React Frontend</text>
+  <text x="115" y="454" class="box-sub">Crop, Fertilizer, AI Advisor, History</text>
+  <text x="115" y="488" class="small">• multilingual UI</text>
+  <text x="115" y="514" class="small">• voice input + weather autofill</text>
+  <text x="115" y="540" class="small">• result cards + follow-up chat</text>
+
+  <rect x="80" y="600" width="250" height="120" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="108" y="640" class="box-title">Browser Storage</text>
+  <text x="108" y="670" class="box-sub">Prediction history, farmer profile,</text>
+  <text x="108" y="694" class="box-sub">language preference, session form state</text>
+
+  <rect x="80" y="755" width="250" height="62" rx="18" fill="#EEF6FF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="108" y="793" class="box-title">Hosted on Vercel</text>
+
+  <!-- Application layer -->
+  <rect x="425" y="230" width="550" height="110" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="455" y="274" class="box-title">Axios API Client</text>
+  <text x="455" y="304" class="box-sub">Frontend sends JSON requests to Flask backend</text>
+  <text x="455" y="330" class="mono">REACT_APP_API_BASE_URL -> Render service</text>
+
+  <rect x="425" y="380" width="550" height="210" rx="22" fill="#F7FBFF" stroke="#A9C7F1" stroke-width="2"/>
+  <rect x="447" y="404" width="220" height="34" rx="10" fill="url(#accent)" opacity="0.12"/>
+  <text x="462" y="427" class="box-title">Flask API Backend</text>
+  <text x="462" y="454" class="box-sub">Routes</text>
+  <text x="462" y="486" class="mono">POST /predict_crop</text>
+  <text x="462" y="512" class="mono">POST /predict_fertilizer</text>
+  <text x="462" y="538" class="mono">POST /ai-recommend</text>
+  <text x="462" y="564" class="mono">POST /ai-follow-up</text>
+
+  <rect x="705" y="430" width="240" height="128" rx="18" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="730" y="466" class="label">Backend responsibilities</text>
+  <text x="730" y="494" class="small">• input validation</text>
+  <text x="730" y="518" class="small">• model loading + inference</text>
+  <text x="730" y="542" class="small">• Gemini request + fallback</text>
+
+  <rect x="425" y="625" width="260" height="160" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="452" y="664" class="box-title">ML Recommendation Engine</text>
+  <text x="452" y="693" class="box-sub">joblib / scikit-learn / XGBoost</text>
+  <text x="452" y="725" class="small">Crop models</text>
+  <text x="452" y="749" class="mono">XGBoost + Random Forest + KNN</text>
+  <text x="452" y="777" class="small">Fertilizer models</text>
+  <text x="452" y="801" class="mono">XGBoost + Random Forest + SVM</text>
+
+  <rect x="715" y="625" width="260" height="160" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="742" y="664" class="box-title">AI Advisory Engine</text>
+  <text x="742" y="693" class="box-sub">Gemini prompt + parsing + safety fallback</text>
+  <text x="742" y="725" class="small">• season + region based advice</text>
+  <text x="742" y="749" class="small">• follow-up chat</text>
+  <text x="742" y="773" class="small">• local rule-based backup when AI fails</text>
+
+  <rect x="425" y="805" width="550" height="44" rx="16" fill="#EEF6FF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="448" y="833" class="box-title">Hosted on Render</text>
+
+  <!-- External -->
+  <rect x="1070" y="240" width="250" height="130" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="1097" y="280" class="box-title">Google Gemini API</text>
+  <text x="1097" y="310" class="box-sub">AI crop recommendation</text>
+  <text x="1097" y="336" class="box-sub">and follow-up responses</text>
+
+  <rect x="1070" y="420" width="250" height="130" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="1097" y="460" class="box-title">Weather Service</text>
+  <text x="1097" y="490" class="box-sub">City-based autofill for</text>
+  <text x="1097" y="516" class="box-sub">temperature, humidity, rainfall</text>
+
+  <rect x="1070" y="600" width="250" height="150" rx="22" fill="#FFFFFF" stroke="#BFD4F6" stroke-width="2"/>
+  <text x="1097" y="640" class="box-title">Model Assets + Config</text>
+  <text x="1097" y="670" class="box-sub">Bundled in backend repo</text>
+  <text x="1097" y="702" class="small">• crop_recommendation/*.joblib</text>
+  <text x="1097" y="726" class="small">• fertilizer_recommendation/*.joblib</text>
+  <text x="1097" y="750" class="small">• .env / deployment variables</text>
+
+  <!-- Arrows -->
+  <path d="M330 285H425" stroke="#4C6FFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M205 340V380" stroke="#7AA5D8" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowMuted)"/>
+  <path d="M205 560V600" stroke="#7AA5D8" stroke-width="3" stroke-linecap="round" marker-end="url(#arrowMuted)"/>
+
+  <path d="M700 340V380" stroke="#4C6FFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M555 590V625" stroke="#4C6FFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M845 590V625" stroke="#4C6FFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <path d="M975 485H1070" stroke="#4C6FFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M975 300H1070" stroke="#4C6FFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M975 705H1070" stroke="#7AA5D8" stroke-width="3.5" stroke-linecap="round" marker-end="url(#arrowMuted)"/>
+
+  <path d="M685 705H715" stroke="#4C6FFF" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M845 625V590" stroke="#7AA5D8" stroke-width="3.5" stroke-linecap="round" marker-end="url(#arrowMuted)"/>
+  <path d="M555 625V590" stroke="#7AA5D8" stroke-width="3.5" stroke-linecap="round" marker-end="url(#arrowMuted)"/>
+
+  <!-- Deployment chips -->
+  <rect x="90" y="830" width="104" height="28" rx="14" fill="#E7F1FF"/>
+  <text x="112" y="849" class="chip">Frontend</text>
+  <rect x="205" y="830" width="98" height="28" rx="14" fill="#E7F1FF"/>
+  <text x="228" y="849" class="chip">Vercel</text>
+
+  <rect x="440" y="855" width="102" height="28" rx="14" fill="#E7F1FF"/>
+  <text x="463" y="874" class="chip">Backend</text>
+  <rect x="554" y="855" width="102" height="28" rx="14" fill="#E7F1FF"/>
+  <text x="580" y="874" class="chip">Render</text>
+  <rect x="668" y="855" width="142" height="28" rx="14" fill="#E7F1FF"/>
+  <text x="692" y="874" class="chip">Gemini + ML</text>
+
+  <!-- Footer notes -->
+  <text x="70" y="890" class="note">Main flow: Browser -> React frontend -> Flask API -> (ML models or Gemini) -> structured recommendation cards -> local history/profile persistence.</text>
+</svg>

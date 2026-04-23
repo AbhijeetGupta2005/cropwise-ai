@@ -319,6 +319,7 @@ function SliderField({
   const { language } = useLanguage();
   const fieldRef = useRef(null);
   const pct = value !== "" ? ((parseFloat(value) - min) / (max - min)) * 100 : 0;
+  const errorId = `${id}-error`;
   const zone      = pct < 25 ? 'low' : pct > 75 ? 'high' : 'ok';
   const zoneColor = zone === 'ok' ? '#c8f55a' : zone === 'high' ? '#f5c842' : '#f55a5a';
 
@@ -387,6 +388,7 @@ function SliderField({
           <input
             type="number"
             id={id}
+            name={id}
             value={value}
             onChange={e => onChange(id, e.target.value)}
             min={min} max={max} step={step}
@@ -394,10 +396,11 @@ function SliderField({
             className="cr-field__number"
             aria-label={`${label} value`}
             aria-invalid={Boolean(error)}
+            aria-describedby={error ? errorId : undefined}
           />
           <span className="cr-field__unit">{unit}</span>
         </div>
-        {error && <div className="cr-field__error">{error}</div>}
+        {error && <div id={errorId} className="cr-field__error" role="alert">{error}</div>}
       </div>
     </div>
   );
@@ -610,12 +613,12 @@ function getAdvisorUi(language) {
       resultsLabel: (season) => `AI सलाहकार | ${season} मौसम`,
       resultsTitle: (area) => <> <em>{area}</em> के लिए उपयुक्त फसलें </>,
       backToForm: "फ़ॉर्म पर वापस जाएँ",
-      liveMode: "Gemini लाइव सलाह",
-      offlineMode: "ऑफ़लाइन सलाह मोड",
+      liveMode: "लाइव AI सलाह",
+      offlineMode: "स्थानीय सलाह बैकअप",
       languageMeta: "हिन्दी",
       seasonMeta: (season) => `${season} मौसम`,
       optionsMeta: (count) => `${count} फसल विकल्प`,
-      fallbackDisclaimer: "अभी Gemini की सीमा पूरी हो गई है, इसलिए ये सुझाव स्थानीय fallback से आए हैं। पास के कृषि विशेषज्ञ से पुष्टि करें।",
+      fallbackDisclaimer: "अभी लाइव Gemini उपलब्ध नहीं है, इसलिए ये सुझाव स्थानीय सलाह बैकअप से आए हैं। अंतिम निर्णय से पहले पास के कृषि विशेषज्ञ से पुष्टि करें।",
       liveDisclaimer: "AI द्वारा तैयार सुझाव। अंतिम निर्णय से पहले स्थानीय कृषि विशेषज्ञ से पुष्टि करें।",
       followUpTitle: "आगे सवाल पूछें",
       followUpPlaceholder: "इस फसल के बारे में कुछ भी पूछें...",
@@ -658,12 +661,12 @@ function getAdvisorUi(language) {
       resultsLabel: (season) => `AI Advisor | ${season} Season`,
       resultsTitle: (area) => <> <em>{area}</em> ke liye top crops </>,
       backToForm: "Form par wapas",
-      liveMode: "Gemini live advisory",
-      offlineMode: "Offline advisory mode",
+      liveMode: "Live AI advisory",
+      offlineMode: "Local advisory backup",
       languageMeta: "Hinglish",
       seasonMeta: (season) => `${season} season`,
       optionsMeta: (count) => `${count} crop options`,
-      fallbackDisclaimer: "Abhi Gemini rate-limited hai, isliye ye recommendations local fallback se aaye hain. Nazdeeki agriculture expert se verify kar lo.",
+      fallbackDisclaimer: "Abhi live Gemini available nahi hai, isliye ye recommendations local advisory backup se aaye hain. Final decision se pehle nazdeeki agriculture expert se verify kar lo.",
       liveDisclaimer: "AI-generated recommendations. Final decision se pehle local agricultural expert se verify kar lo.",
       followUpTitle: "Aage sawaal poochho",
       followUpPlaceholder: "Is crop ke baare mein kuch bhi poochho...",
@@ -705,12 +708,12 @@ function getAdvisorUi(language) {
     resultsLabel: (season) => `AI Advisor | ${season} Season`,
     resultsTitle: (area) => <>Top crops for <em>{area}</em></>,
     backToForm: "Back to form",
-    liveMode: "Gemini live advisory",
-    offlineMode: "Offline advisory mode",
+    liveMode: "Live AI advisory",
+    offlineMode: "Local advisory backup",
     languageMeta: "English",
     seasonMeta: (season) => `${season} season`,
     optionsMeta: (count) => `${count} crop options`,
-    fallbackDisclaimer: "Gemini is rate-limited right now, so these recommendations use the local advisory fallback. Validate with nearby agricultural experts.",
+    fallbackDisclaimer: "Live Gemini advice is temporarily unavailable, so these recommendations are coming from the local advisory backup. Validate with nearby agricultural experts.",
     liveDisclaimer: "AI-generated recommendations. Always validate with local agricultural experts.",
     followUpTitle: "Ask a follow-up",
     followUpPlaceholder: "Ask anything about this crop...",
@@ -1733,6 +1736,7 @@ function MLPanel() {
             <input
               className="cr-field__input"
               id="region"
+              name="region"
               type="text"
               value={formData.region}
               onChange={handleChange}
@@ -1770,7 +1774,7 @@ function MLPanel() {
           <div className="cr-field">
             <div className="cr-field__icon" aria-hidden="true">FN</div>
             <div className="cr-field__inner">
-              <input className="cr-field__input" id="farmerName" type="text" value={profileForm.farmerName} onChange={handleProfileChange} placeholder=" " autoComplete="off" />
+              <input className="cr-field__input" id="farmerName" name="farmerName" type="text" value={profileForm.farmerName} onChange={handleProfileChange} placeholder=" " autoComplete="off" />
               <label className="cr-floating-label" htmlFor="farmerName">{ui.farmerName}</label>
             </div>
           </div>
@@ -1778,7 +1782,7 @@ function MLPanel() {
           <div className="cr-field">
             <div className="cr-field__icon" aria-hidden="true">FM</div>
             <div className="cr-field__inner">
-              <input className="cr-field__input" id="farmName" type="text" value={profileForm.farmName} onChange={handleProfileChange} placeholder=" " autoComplete="off" />
+              <input className="cr-field__input" id="farmName" name="farmName" type="text" value={profileForm.farmName} onChange={handleProfileChange} placeholder=" " autoComplete="off" />
               <label className="cr-floating-label" htmlFor="farmName">{ui.farmName}</label>
             </div>
           </div>
@@ -1786,16 +1790,16 @@ function MLPanel() {
           <div className="cr-field">
             <div className="cr-field__icon" aria-hidden="true">RG</div>
             <div className="cr-field__inner">
-              <input className="cr-field__input" id="profileRegion" type="text" value={profileForm.region} onChange={handleProfileChange} placeholder=" " autoComplete="off" />
+              <input className="cr-field__input" id="profileRegion" name="profileRegion" type="text" value={profileForm.region} onChange={handleProfileChange} placeholder=" " autoComplete="off" />
               <label className="cr-floating-label" htmlFor="profileRegion">{ui.defaultRegion}</label>
             </div>
           </div>
 
-          <div className="cr-field">
+          <div className="cr-field cr-field--segmented">
             <div className="cr-field__icon" aria-hidden="true">LG</div>
-            <div className="cr-field__inner">
-              <label className="cr-floating-label cr-floating-label--active" htmlFor="profileLanguage">{ui.preferredLanguage}</label>
-              <div className="cr-profile-language-group" id="profileLanguage" role="group" aria-label={ui.preferredLanguage}>
+            <div className="cr-field__inner cr-field__inner--segmented">
+              <span className="cr-field__label-top">{ui.preferredLanguage}</span>
+              <div className="cr-profile-language-group" role="group" aria-label={ui.preferredLanguage}>
                 {profileLanguageOptions.map((option) => (
                   <button
                     key={option.value}
@@ -1928,7 +1932,11 @@ function AICropCard({ crop, index, language }) {
   const reason = cleanAdviceReason(crop.reason);
   const confidenceLabel = localizeAdvisorScale(crop.confidence, language, "confidence");
   const fitLabel = localizeAdvisorScale(crop.season_fit, language, "fit");
-  const sourceLabel = fallback ? (language === "hindi" ? "ऑफ़लाइन" : "Offline") : "Gemini";
+  const sourceLabel = fallback
+    ? language === "hindi"
+      ? "स्थानीय"
+      : "Local"
+    : "Gemini";
 
   return (
   <div className={`ai-card${fallback ? ' ai-card--fallback' : ''}`} style={{ animationDelay: `${index * 120}ms` }}>
@@ -2064,6 +2072,7 @@ function AIFollowUpChat({ cropContext, language }) {
       <div className="cr-followup__input-row">
         <input
           className="cr-followup__input"
+          name="followup-question"
           type="text"
           placeholder={ui.followUpPlaceholder}
           value={input}
@@ -2136,12 +2145,12 @@ function AIAdvisorPanel() {
           </button>
         </div>
         <div className="ai-results__meta" aria-label="Recommendation summary">
-          <span>{modeLabel}</span>
-          <span>{ui.languageMeta}</span>
-          <span>{ui.seasonMeta(season)}</span>
-          <span>{ui.optionsMeta(aiResults.length)}</span>
+          <span className={`ai-results__meta-pill${fallbackMode ? ' ai-results__meta-pill--fallback' : ' ai-results__meta-pill--live'}`}>{modeLabel}</span>
+          <span className="ai-results__meta-pill">{ui.languageMeta}</span>
+          <span className="ai-results__meta-pill">{ui.seasonMeta(season)}</span>
+          <span className="ai-results__meta-pill">{ui.optionsMeta(aiResults.length)}</span>
         </div>
-        <div className="ai-results__disclaimer">
+        <div className={`ai-results__disclaimer${fallbackMode ? ' ai-results__disclaimer--fallback' : ' ai-results__disclaimer--live'}`}>
           <span className="ai-results__disclaimer-icon" aria-hidden="true">AI</span>
           {fallbackMode
             ? ui.fallbackDisclaimer
