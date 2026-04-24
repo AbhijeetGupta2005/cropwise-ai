@@ -32,21 +32,10 @@ export async function getAICropRecommendation(area, season, language = "english"
   }
 }
 
-function formatAIResponse(text) {
-  if (!text) return "";
-
-  return text
-    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/(\d+\.\s)/g, "<br/><br/><strong>$1</strong>")
-    .replace(/\*\s/g, "<br/>• ")
-    .replace(/\n/g, "<br/>")
-    .replace(/(<br\/>){3,}/g, "<br/><br/>");
-}
-
 export async function getAICropFollowUp(context, history, language = "english") {
   try {
     const response = await api.post("/ai-follow-up", { context, history, language });
-    return formatAIResponse(response.data?.reply || "Sorry, no response from AI.");
+    return String(response.data?.reply || "Sorry, no response from AI.");
   } catch (error) {
     throw new Error(
       error.response?.data?.error ||
