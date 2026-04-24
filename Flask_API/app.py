@@ -3,6 +3,7 @@ from flask_cors import CORS
 
 import os
 import json
+import time
 import numpy as np
 from collections import Counter
 import requests
@@ -111,55 +112,115 @@ def should_use_ai_fallback(status_code):
     return status_code in {403, 429, 500, 502, 503, 504}
 
 
+def get_gemini_models():
+    primary_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+    fallback_models_env = os.getenv("GEMINI_FALLBACK_MODELS", "").strip()
+    fallback_models = [
+        model.strip()
+        for model in fallback_models_env.split(",")
+        if model.strip()
+    ]
+
+    models = []
+    for model in [primary_model, *fallback_models]:
+        if model and model not in models:
+            models.append(model)
+    return models
+
+
 def call_gemini(prompt, temperature=0.4):
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         return None, ("Missing GEMINI_API_KEY in the Flask backend environment.", 500)
 
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    models = get_gemini_models()
     headers = {"Content-Type": "application/json"}
     http_referer = os.getenv("GEMINI_HTTP_REFERER")
     if http_referer:
         headers["Referer"] = http_referer
 
-    response = requests.post(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-        headers=headers,
-        params={"key": api_key},
-        json={
-            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": temperature},
-        },
-        timeout=15,
-    )
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": temperature},
+    }
 
-    try:
-        result = response.json()
-    except ValueError:
+    retry_delays = [0, 1.0, 2.0]
+    last_error = ("Gemini service is unavailable right now. Please try again later.", 503)
+
+    for model_index, model in enumerate(models, start=1):
+        response = None
         result = {}
 
-    if not response.ok:
-        app.logger.warning(
-            "Gemini request failed: status=%s model=%s referer=%s message=%s",
-            response.status_code,
-            model,
-            http_referer or "<missing>",
-            result.get("error", {}).get("message") if isinstance(result, dict) else None,
-        )
-        return None, (gemini_error_message(response.status_code, result), response.status_code)
+        for attempt, delay in enumerate(retry_delays, start=1):
+            if delay:
+                time.sleep(delay)
 
-    try:
-        text = result["candidates"][0]["content"]["parts"][0]["text"]
-    except (KeyError, IndexError, TypeError):
-        app.logger.warning(
-            "Gemini returned an empty or malformed response: model=%s referer=%s payload_keys=%s",
-            model,
-            http_referer or "<missing>",
-            list(result.keys()) if isinstance(result, dict) else type(result).__name__,
-        )
-        return None, ("Gemini returned an empty response. Please try again.", 502)
+            response = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                headers=headers,
+                params={"key": api_key},
+                json=payload,
+                timeout=15,
+            )
 
-    return text, None
+            try:
+                result = response.json()
+            except ValueError:
+                result = {}
+
+            if response.ok:
+                try:
+                    text = result["candidates"][0]["content"]["parts"][0]["text"]
+                except (KeyError, IndexError, TypeError):
+                    app.logger.warning(
+                        "Gemini returned an empty or malformed response: model=%s referer=%s payload_keys=%s",
+                        model,
+                        http_referer or "<missing>",
+                        list(result.keys()) if isinstance(result, dict) else type(result).__name__,
+                    )
+                    return None, ("Gemini returned an empty response. Please try again.", 502)
+
+                return text, None
+
+            status_code = response.status_code
+            error_message = result.get("error", {}).get("message") if isinstance(result, dict) else None
+            app.logger.warning(
+                "Gemini request failed: status=%s model=%s referer=%s model_attempt=%s/%s retry_attempt=%s/%s message=%s",
+                status_code,
+                model,
+                http_referer or "<missing>",
+                model_index,
+                len(models),
+                attempt,
+                len(retry_delays),
+                error_message,
+            )
+
+            last_error = (gemini_error_message(status_code, result), status_code)
+
+            if status_code == 503 and attempt < len(retry_delays):
+                app.logger.info(
+                    "Retrying Gemini after 503: model=%s referer=%s next_delay=%ss",
+                    model,
+                    http_referer or "<missing>",
+                    retry_delays[attempt],
+                )
+                continue
+
+            if status_code in {429, 503} and model_index < len(models):
+                next_model = models[model_index]
+                app.logger.info(
+                    "Switching Gemini model after %s: current_model=%s next_model=%s referer=%s",
+                    status_code,
+                    model,
+                    next_model,
+                    http_referer or "<missing>",
+                )
+                break
+
+            return None, last_error
+
+    return None, last_error
 
 
 def parse_gemini_json_array(text):

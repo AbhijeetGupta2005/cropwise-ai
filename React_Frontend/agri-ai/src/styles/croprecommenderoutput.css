@@ -974,7 +974,25 @@
 .ai-results__header { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.1rem; }
 .ai-results__title { font-family: var(--cr-font-disp); font-size: 1.7rem; font-weight: 700; letter-spacing: -0.02em; color: var(--cr-text); margin: 0.15rem 0 0; line-height: 1.08; }
 .ai-results__title em { font-style: italic; color: var(--cr-ai); }
+.ai-results__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  justify-content: flex-end;
+}
 .ai-results__back { margin-top: 0 !important; padding: 0.55rem 1.2rem; font-size: 0.84rem; }
+.ai-results__retry {
+  margin-top: 0 !important;
+  padding: 0.55rem 1rem;
+  font-size: 0.84rem;
+  border-color: rgba(167,139,250,0.28) !important;
+  color: var(--cr-ai) !important;
+}
+.ai-results__retry:hover {
+  border-color: rgba(167,139,250,0.42) !important;
+  background: rgba(167,139,250,0.08) !important;
+}
 .ai-results__meta {
   display: flex;
   flex-wrap: wrap;
@@ -1125,6 +1143,8 @@
   .ai-language-toggle { grid-template-columns: 1fr; }
   .ai-season-grid { grid-template-columns: 1fr; }
   .ai-cards-grid  { grid-template-columns: 1fr; }
+  .ai-results__header-actions { width: 100%; justify-content: stretch; }
+  .ai-results__header-actions .cr-btn { width: 100%; justify-content: center; }
   .cr-result__hero { height: 250px; }
   .cr-result__body { padding: 1.5rem 1.2rem 3rem; }
 }

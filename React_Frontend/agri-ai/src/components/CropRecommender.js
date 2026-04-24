@@ -620,6 +620,7 @@ function getAdvisorUi(language) {
       optionsMeta: (count) => `${count} फसल विकल्प`,
       fallbackDisclaimer: "अभी लाइव Gemini उपलब्ध नहीं है, इसलिए ये सुझाव स्थानीय सलाह बैकअप से आए हैं। अंतिम निर्णय से पहले पास के कृषि विशेषज्ञ से पुष्टि करें।",
       liveDisclaimer: "AI द्वारा तैयार सुझाव। अंतिम निर्णय से पहले स्थानीय कृषि विशेषज्ञ से पुष्टि करें।",
+      retryLiveAi: "लाइव AI फिर आज़माएँ",
       followUpTitle: "आगे सवाल पूछें",
       followUpPlaceholder: "इस फसल के बारे में कुछ भी पूछें...",
       followUpSend: "भेजें",
@@ -668,6 +669,7 @@ function getAdvisorUi(language) {
       optionsMeta: (count) => `${count} crop options`,
       fallbackDisclaimer: "Abhi live Gemini available nahi hai, isliye ye recommendations local advisory backup se aaye hain. Final decision se pehle nazdeeki agriculture expert se verify kar lo.",
       liveDisclaimer: "AI-generated recommendations. Final decision se pehle local agricultural expert se verify kar lo.",
+      retryLiveAi: "Live AI dobara try karo",
       followUpTitle: "Aage sawaal poochho",
       followUpPlaceholder: "Is crop ke baare mein kuch bhi poochho...",
       followUpSend: "Send",
@@ -715,6 +717,7 @@ function getAdvisorUi(language) {
     optionsMeta: (count) => `${count} crop options`,
     fallbackDisclaimer: "Live Gemini advice is temporarily unavailable, so these recommendations are coming from the local advisory backup. Validate with nearby agricultural experts.",
     liveDisclaimer: "AI-generated recommendations. Always validate with local agricultural experts.",
+    retryLiveAi: "Try Live AI Again",
     followUpTitle: "Ask a follow-up",
     followUpPlaceholder: "Ask anything about this crop...",
     followUpSend: "Go",
@@ -2140,9 +2143,16 @@ function AIAdvisorPanel() {
             <div className="cr-section-label">{ui.resultsLabel(season)}</div>
             <h2 className="ai-results__title">{ui.resultsTitle(area)}</h2>
           </div>
-          <button className="cr-btn cr-btn--ghost ai-results__back" onClick={() => { setAiResults(null); setArea(''); setSeason(''); setError(''); }}>
-            {ui.backToForm}
-          </button>
+          <div className="ai-results__header-actions">
+            {fallbackMode && (
+              <button className="cr-btn cr-btn--ghost ai-results__retry" onClick={handleRecommend}>
+                {ui.retryLiveAi}
+              </button>
+            )}
+            <button className="cr-btn cr-btn--ghost ai-results__back" onClick={() => { setAiResults(null); setArea(''); setSeason(''); setError(''); }}>
+              {ui.backToForm}
+            </button>
+          </div>
         </div>
         <div className="ai-results__meta" aria-label="Recommendation summary">
           <span className={`ai-results__meta-pill${fallbackMode ? ' ai-results__meta-pill--fallback' : ' ai-results__meta-pill--live'}`}>{modeLabel}</span>
