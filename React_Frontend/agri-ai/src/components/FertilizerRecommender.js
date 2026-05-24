@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { useHistory, useLocation } from 'react-router-dom'
-import api from "../api/recommenderapi"
+import { predictFertilizer } from "../api/predictions"
 import { fertilizerData } from "./Data"
 import { savePredictionHistory } from "../utils/predictionHistory"
 import { useLanguage } from "../context/LanguageContext"
+import { normalizeLocalizedCopy } from "../utils/localization"
 import "../styles/FertilizerRecommender.css"
 
 function downloadTextReport(filename, content) {
@@ -20,9 +21,9 @@ function downloadTextReport(filename, content) {
 
 function getSuitabilityMeta(score, language = "english") {
   if (language === "hindi") {
-    if (score >= 85) return { label: "बहुत उपयुक्त", tone: "high", note: "यह उर्वरक सुझाव मॉडल आउटपुट से मज़बूती से समर्थित है।" }
-    if (score >= 65) return { label: "मध्यम रूप से उपयुक्त", tone: "mid", note: "यह उर्वरक सुझाव ठीक लगता है, लेकिन खेत की स्थिति जाँचना बेहतर रहेगा।" }
-    return { label: "सावधानी बरतें", tone: "low", note: "इसे सावधानी वाला सुझाव मानें और लागू करने से पहले जाँच लें।" }
+    if (score >= 85) return { label: "à¤¬à¤¹à¥à¤¤ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤", tone: "high", note: "à¤¯à¤¹ à¤‰à¤°à¥à¤µà¤°à¤• à¤¸à¥à¤à¤¾à¤µ à¤®à¥‰à¤¡à¤² à¤†à¤‰à¤Ÿà¤ªà¥à¤Ÿ à¤¸à¥‡ à¤®à¤œà¤¼à¤¬à¥‚à¤¤à¥€ à¤¸à¥‡ à¤¸à¤®à¤°à¥à¤¥à¤¿à¤¤ à¤¹à¥ˆà¥¤" }
+    if (score >= 65) return { label: "à¤®à¤§à¥à¤¯à¤® à¤°à¥‚à¤ª à¤¸à¥‡ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤", tone: "mid", note: "à¤¯à¤¹ à¤‰à¤°à¥à¤µà¤°à¤• à¤¸à¥à¤à¤¾à¤µ à¤ à¥€à¤• à¤²à¤—à¤¤à¤¾ à¤¹à¥ˆ, à¤²à¥‡à¤•à¤¿à¤¨ à¤–à¥‡à¤¤ à¤•à¥€ à¤¸à¥à¤¥à¤¿à¤¤à¤¿ à¤œà¤¾à¤à¤šà¤¨à¤¾ à¤¬à¥‡à¤¹à¤¤à¤° à¤°à¤¹à¥‡à¤—à¤¾à¥¤" }
+    return { label: "à¤¸à¤¾à¤µà¤§à¤¾à¤¨à¥€ à¤¬à¤°à¤¤à¥‡à¤‚", tone: "low", note: "à¤‡à¤¸à¥‡ à¤¸à¤¾à¤µà¤§à¤¾à¤¨à¥€ à¤µà¤¾à¤²à¤¾ à¤¸à¥à¤à¤¾à¤µ à¤®à¤¾à¤¨à¥‡à¤‚ à¤”à¤° à¤²à¤¾à¤—à¥‚ à¤•à¤°à¤¨à¥‡ à¤¸à¥‡ à¤ªà¤¹à¤²à¥‡ à¤œà¤¾à¤à¤š à¤²à¥‡à¤‚à¥¤" }
   }
 
   if (language === "hinglish") {
@@ -36,50 +37,109 @@ function getSuitabilityMeta(score, language = "english") {
   return { label: "Use Caution", tone: "low", note: "Treat this fertilizer result as a cautious suggestion and verify before applying." }
 }
 
+function getConfidenceExplanation(score, language = "english") {
+  if (language === "hindi") {
+    if (score >= 85) return { title: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤¸à¥à¤¤à¤°", detail: "à¤¯à¤¹ à¤‰à¤°à¥à¤µà¤°à¤• à¤¸à¥à¤à¤¾à¤µ à¤®à¤œà¤¬à¥‚à¤¤ à¤¹à¥ˆ à¤”à¤° à¤®à¥‰à¤¡à¤² à¤†à¤‰à¤Ÿà¤ªà¥à¤Ÿ à¤‡à¤¸à¤•à¤¾ à¤…à¤šà¥à¤›à¤¾ à¤¸à¤®à¤°à¥à¤¥à¤¨ à¤•à¤°à¤¤à¥‡ à¤¹à¥ˆà¤‚à¥¤" }
+    if (score >= 65) return { title: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤¸à¥à¤¤à¤°", detail: "à¤¯à¤¹ à¤¸à¥à¤à¤¾à¤µ à¤ à¥€à¤• à¤¹à¥ˆ, à¤²à¥‡à¤•à¤¿à¤¨ à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤”à¤° à¤«à¤¸à¤² à¤•à¥€ à¤µà¤¾à¤¸à¥à¤¤à¤µà¤¿à¤• à¤¸à¥à¤¥à¤¿à¤¤à¤¿ à¤¸à¥‡ à¤®à¤¿à¤²à¤¾à¤¨ à¤•à¤°à¤¨à¤¾ à¤¬à¥‡à¤¹à¤¤à¤° à¤°à¤¹à¥‡à¤—à¤¾à¥¤" }
+    return { title: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤¸à¥à¤¤à¤°", detail: "à¤¯à¤¹ à¤•à¤®-à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤µà¤¾à¤²à¤¾ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤¹à¥ˆ; à¤‰à¤ªà¤¯à¥‹à¤— à¤¸à¥‡ à¤ªà¤¹à¤²à¥‡ à¤…à¤¤à¤¿à¤°à¤¿à¤•à¥à¤¤ à¤œà¤¾à¤‚à¤š à¤•à¤°à¤¨à¤¾ à¤‰à¤šà¤¿à¤¤ à¤°à¤¹à¥‡à¤—à¤¾à¥¤" }
+  }
+
+  if (language === "hinglish") {
+    if (score >= 85) return { title: "Confidence level", detail: "Yeh fertilizer result strong hai aur model output ise achha support deta hai." }
+    if (score >= 65) return { title: "Confidence level", detail: "Yeh recommendation theek lagti hai, lekin soil aur crop conditions ke saath verify karna better rahega." }
+    return { title: "Confidence level", detail: "Yeh low-confidence result hai, isliye apply karne se pehle extra validation useful hogi." }
+  }
+
+  if (score >= 85) return { title: "Confidence level", detail: "This fertilizer result is strong and the model outputs support it well." }
+  if (score >= 65) return { title: "Confidence level", detail: "This recommendation looks reasonable, but it should still be verified against soil and crop conditions." }
+  return { title: "Confidence level", detail: "This is a low-confidence result, so extra validation would be useful before applying it." }
+}
+
+function getConsensusExplanation(agreeingCount, totalModels, language = "english") {
+  if (language === "hindi") {
+    if (agreeingCount === totalModels) return { title: "à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤à¤¿", detail: "à¤¸à¤­à¥€ à¤®à¥‰à¤¡à¤² à¤‡à¤¸à¥€ à¤‰à¤°à¥à¤µà¤°à¤• à¤ªà¤° à¤¸à¤¹à¤®à¤¤ à¤¹à¥ˆà¤‚, à¤‡à¤¸à¤²à¤¿à¤ à¤¸à¤‚à¤•à¥‡à¤¤ à¤•à¤¾à¤«à¥€ à¤¸à¥à¤¥à¤¿à¤° à¤¹à¥ˆà¥¤" }
+    if (agreeingCount >= 2) return { title: "à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤à¤¿", detail: "à¤…à¤§à¤¿à¤•à¤¾à¤‚à¤¶ à¤®à¥‰à¤¡à¤² à¤‡à¤¸ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤¸à¥‡ à¤¸à¤¹à¤®à¤¤ à¤¹à¥ˆà¤‚, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¤¹ à¤µà¥à¤¯à¤¾à¤µà¤¹à¤¾à¤°à¤¿à¤• à¤¸à¥à¤à¤¾à¤µ à¤®à¤¾à¤¨à¤¾ à¤œà¤¾ à¤¸à¤•à¤¤à¤¾ à¤¹à¥ˆà¥¤" }
+    return { title: "à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤à¤¿", detail: "à¤®à¥‰à¤¡à¤² à¤…à¤²à¤—-à¤…à¤²à¤— à¤‰à¤°à¥à¤µà¤°à¤• à¤¸à¥à¤à¤¾ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚, à¤‡à¤¸à¤²à¤¿à¤ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤•à¥‹ à¤¸à¤¾à¤µà¤§à¤¾à¤¨à¥€ à¤¸à¥‡ à¤¦à¥‡à¤–à¤¨à¤¾ à¤šà¤¾à¤¹à¤¿à¤à¥¤" }
+  }
+
+  if (language === "hinglish") {
+    if (agreeingCount === totalModels) return { title: "Model consensus", detail: "Saare models isi fertilizer par agree kar rahe hain, so signal kaafi stable hai." }
+    if (agreeingCount >= 2) return { title: "Model consensus", detail: "Most models is result se agree karte hain, so yeh practical recommendation lagti hai." }
+    return { title: "Model consensus", detail: "Models alag-alag fertilizer suggest kar rahe hain, so result ko caution ke saath dekhna chahiye." }
+  }
+
+  if (agreeingCount === totalModels) return { title: "Model consensus", detail: "All models agree on the same fertilizer, so the signal is fairly stable." }
+  if (agreeingCount >= 2) return { title: "Model consensus", detail: "Most models agree with this result, so it looks like a practical recommendation." }
+  return { title: "Model consensus", detail: "The models suggest different fertilizers, so this result should be read with caution." }
+}
+
+function getDecisionEdgeExplanation(winningConf, altConf, language = "english") {
+  const margin = altConf == null ? winningConf : Math.max(0, winningConf - altConf)
+
+  if (language === "hindi") {
+    if (altConf == null) return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: "à¤•à¥‹à¤ˆ à¤®à¤œà¤¬à¥‚à¤¤ à¤µà¥ˆà¤•à¤²à¥à¤ªà¤¿à¤• à¤‰à¤°à¥à¤µà¤°à¤• à¤¸à¤¾à¤®à¤¨à¥‡ à¤¨à¤¹à¥€à¤‚ à¤†à¤¯à¤¾, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¤¹à¥€ à¤¸à¤¬à¤¸à¥‡ à¤¸à¥à¤ªà¤·à¥à¤Ÿ à¤šà¤¯à¤¨ à¤¦à¤¿à¤–à¤¤à¤¾ à¤¹à¥ˆà¥¤" }
+    if (margin >= 20) return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: `à¤®à¥à¤–à¥à¤¯ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤…à¤—à¤²à¥‡ à¤µà¤¿à¤•à¤²à¥à¤ª à¤¸à¥‡ à¤²à¤—à¤­à¤— ${margin.toFixed(1)}% à¤†à¤—à¥‡ à¤¹à¥ˆ, à¤‡à¤¸à¤²à¤¿à¤ à¤‡à¤¸à¤•à¥€ à¤¬à¤¢à¤¼à¤¤ à¤¸à¥à¤ªà¤·à¥à¤Ÿ à¤¹à¥ˆà¥¤` }
+    if (margin >= 8) return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: `à¤®à¥à¤–à¥à¤¯ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤•à¥€ à¤¬à¤¢à¤¼à¤¤ à¤²à¤—à¤­à¤— ${margin.toFixed(1)}% à¤¹à¥ˆ, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¤¹ à¤¬à¥‡à¤¹à¤¤à¤° à¤¹à¥ˆ à¤²à¥‡à¤•à¤¿à¤¨ à¤¬à¤¹à¥à¤¤ à¤œà¥à¤¯à¤¾à¤¦à¤¾ à¤¨à¤¹à¥€à¤‚à¥¤` }
+    return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: `à¤®à¥à¤–à¥à¤¯ à¤”à¤° à¤µà¥ˆà¤•à¤²à¥à¤ªà¤¿à¤• à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤•à¤°à¥€à¤¬ à¤¹à¥ˆà¤‚ (à¤²à¤—à¤­à¤— ${margin.toFixed(1)}% à¤…à¤‚à¤¤à¤°), à¤‡à¤¸à¤²à¤¿à¤ à¤®à¥ˆà¤¨à¥à¤¯à¥à¤…à¤² à¤œà¤¾à¤‚à¤š à¤‰à¤ªà¤¯à¥‹à¤—à¥€ à¤°à¤¹à¥‡à¤—à¥€à¥¤` }
+  }
+
+  if (language === "hinglish") {
+    if (altConf == null) return { title: "Decision edge", detail: "Koi strong alternative fertilizer saamne nahi aaya, so yeh clearest option lagta hai." }
+    if (margin >= 20) return { title: "Decision edge", detail: `Final result next option se lagbhag ${margin.toFixed(1)}% aage hai, so iski lead kaafi clear hai.` }
+    if (margin >= 8) return { title: "Decision edge", detail: `Final result ki lead around ${margin.toFixed(1)}% hai, so yeh better lagta hai but gap bahut huge nahi hai.` }
+    return { title: "Decision edge", detail: `Final aur alternative fertilizer ka gap sirf ${margin.toFixed(1)}% ke around hai, so local verification helpful rahegi.` }
+  }
+
+  if (altConf == null) return { title: "Decision edge", detail: "No strong competing fertilizer appeared, so this looks like the clearest option." }
+  if (margin >= 20) return { title: "Decision edge", detail: `The final result leads the next option by about ${margin.toFixed(1)}%, so the lead is clear.` }
+  if (margin >= 8) return { title: "Decision edge", detail: `The final result leads by around ${margin.toFixed(1)}%, so it looks better without being overwhelming.` }
+  return { title: "Decision edge", detail: `The final and alternative fertilizer results are close (about ${margin.toFixed(1)}% apart), so local verification would help.` }
+}
+
 function getFertilizerUi(language = "english") {
   if (language === "hindi") {
     return {
-      recommendedFertilizer: "सुझाया गया उर्वरक",
-      confidence: "विश्वास",
-      supportedBy: "समर्थित मॉडल",
-      lowConfidence: "कम विश्वास - मॉडल पूरी तरह सहमत नहीं हैं। कृपया मैन्युअली जाँचें।",
-      modelBreakdown: "मॉडल विवरण",
-      downloadResult: "रिज़ल्ट डाउनलोड करें",
-      copyResult: "रिज़ल्ट कॉपी करें",
-      copied: "कॉपी हो गया",
-      backToPrediction: "सुझाव पर वापस जाएँ",
-      fromCropRecommendation: "फसल सुझाव से आया हुआ",
-      continuingWith: (crop) => `${crop} के साथ आगे बढ़ रहे हैं`,
-      prefilledContext: "NPK और जलवायु मान पहले से भरे गए हैं",
-      retry: "फिर कोशिश करें",
-      soilComposition: "मिट्टी की संरचना",
-      classification: "वर्गीकरण",
-      soilType: "मिट्टी का प्रकार",
-      cropType: "फसल का प्रकार",
-      analysePredict: "विश्लेषण करें और सुझाव पाएँ",
-      readyToPredict: "सुझाव के लिए तैयार",
-      fieldsRemaining: (count) => `${count} फ़ील्ड बाकी`,
-      loadExampleTitle: "उदाहरण डेटा भरें",
-      exampleAria: "उदाहरण डेटा भरें",
-      historyAria: "सुझाव इतिहास खोलें",
-      dismissError: "त्रुटि हटाएँ और फिर से कोशिश करें",
-      required: "ज़रूरी",
-      mustBe: (min, max) => `${min}-${max} के बीच होना चाहिए`,
-      allFieldsComplete: "सभी फ़ील्ड पूरे हैं - सुझाव के लिए तैयार",
-      noConsensus: "कोई स्पष्ट सहमति नहीं",
-      reportTitle: "उर्वरक सुझाव रिपोर्ट",
-      reportRecommended: "सुझाया गया उर्वरक",
-      reportInputSummary: "इनपुट सारांश",
-      reportNotes: "नोट्स",
-      search: (label) => `${label} खोजें...`,
-      clearSearch: "खोज साफ़ करें",
-      noResults: (query) => `"${query}" के लिए कोई परिणाम नहीं`,
-      optionsCount: (count, query) => `${count} विकल्प${query ? ` "${query}" के लिए` : ""}`,
-      selectLabel: (label) => `${label} चुनें...`,
-      selectError: (label) => `कृपया ${label} चुनें`,
-      winningModel: "विजेता मॉडल",
-      fillRemainingTitle: (count) => `आगे बढ़ने के लिए बाकी ${count} फ़ील्ड भरें`,
-      loadingPrediction: "सुझाव लोड हो रहा है...",
+      recommendedFertilizer: "à¤¸à¥à¤à¤¾à¤¯à¤¾ à¤—à¤¯à¤¾ à¤‰à¤°à¥à¤µà¤°à¤•",
+      confidence: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸",
+      supportedBy: "à¤¸à¤®à¤°à¥à¤¥à¤¿à¤¤ à¤®à¥‰à¤¡à¤²",
+      lowConfidence: "à¤•à¤® à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ - à¤®à¥‰à¤¡à¤² à¤ªà¥‚à¤°à¥€ à¤¤à¤°à¤¹ à¤¸à¤¹à¤®à¤¤ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¤‚à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤®à¥ˆà¤¨à¥à¤¯à¥à¤…à¤²à¥€ à¤œà¤¾à¤à¤šà¥‡à¤‚à¥¤",
+      modelBreakdown: "à¤®à¥‰à¤¡à¤² à¤µà¤¿à¤µà¤°à¤£",
+      downloadResult: "à¤°à¤¿à¤œà¤¼à¤²à¥à¤Ÿ à¤¡à¤¾à¤‰à¤¨à¤²à¥‹à¤¡ à¤•à¤°à¥‡à¤‚",
+      copyResult: "à¤°à¤¿à¤œà¤¼à¤²à¥à¤Ÿ à¤•à¥‰à¤ªà¥€ à¤•à¤°à¥‡à¤‚",
+      copied: "à¤•à¥‰à¤ªà¥€ à¤¹à¥‹ à¤—à¤¯à¤¾",
+      backToPrediction: "à¤¸à¥à¤à¤¾à¤µ à¤ªà¤° à¤µà¤¾à¤ªà¤¸ à¤œà¤¾à¤à¤",
+      fromCropRecommendation: "à¤«à¤¸à¤² à¤¸à¥à¤à¤¾à¤µ à¤¸à¥‡ à¤†à¤¯à¤¾ à¤¹à¥à¤†",
+      continuingWith: (crop) => `${crop} à¤•à¥‡ à¤¸à¤¾à¤¥ à¤†à¤—à¥‡ à¤¬à¤¢à¤¼ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚`,
+      prefilledContext: "NPK à¤”à¤° à¤œà¤²à¤µà¤¾à¤¯à¥ à¤®à¤¾à¤¨ à¤ªà¤¹à¤²à¥‡ à¤¸à¥‡ à¤­à¤°à¥‡ à¤—à¤ à¤¹à¥ˆà¤‚",
+      retry: "à¤«à¤¿à¤° à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚",
+      soilComposition: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤•à¥€ à¤¸à¤‚à¤°à¤šà¤¨à¤¾",
+      classification: "à¤µà¤°à¥à¤—à¥€à¤•à¤°à¤£",
+      soilType: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤•à¤¾ à¤ªà¥à¤°à¤•à¤¾à¤°",
+      cropType: "à¤«à¤¸à¤² à¤•à¤¾ à¤ªà¥à¤°à¤•à¤¾à¤°",
+      analysePredict: "à¤µà¤¿à¤¶à¥à¤²à¥‡à¤·à¤£ à¤•à¤°à¥‡à¤‚ à¤”à¤° à¤¸à¥à¤à¤¾à¤µ à¤ªà¤¾à¤à¤",
+      readyToPredict: "à¤¸à¥à¤à¤¾à¤µ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤°",
+      fieldsRemaining: (count) => `${count} à¤«à¤¼à¥€à¤²à¥à¤¡ à¤¬à¤¾à¤•à¥€`,
+      loadExampleTitle: "à¤‰à¤¦à¤¾à¤¹à¤°à¤£ à¤¡à¥‡à¤Ÿà¤¾ à¤­à¤°à¥‡à¤‚",
+      exampleAria: "à¤‰à¤¦à¤¾à¤¹à¤°à¤£ à¤¡à¥‡à¤Ÿà¤¾ à¤­à¤°à¥‡à¤‚",
+      historyAria: "à¤¸à¥à¤à¤¾à¤µ à¤‡à¤¤à¤¿à¤¹à¤¾à¤¸ à¤–à¥‹à¤²à¥‡à¤‚",
+      dismissError: "à¤¤à¥à¤°à¥à¤Ÿà¤¿ à¤¹à¤Ÿà¤¾à¤à¤ à¤”à¤° à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚",
+      required: "à¤œà¤¼à¤°à¥‚à¤°à¥€",
+      mustBe: (min, max) => `${min}-${max} à¤•à¥‡ à¤¬à¥€à¤š à¤¹à¥‹à¤¨à¤¾ à¤šà¤¾à¤¹à¤¿à¤`,
+      allFieldsComplete: "à¤¸à¤­à¥€ à¤«à¤¼à¥€à¤²à¥à¤¡ à¤ªà¥‚à¤°à¥‡ à¤¹à¥ˆà¤‚ - à¤¸à¥à¤à¤¾à¤µ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤°",
+      noConsensus: "à¤•à¥‹à¤ˆ à¤¸à¥à¤ªà¤·à¥à¤Ÿ à¤¸à¤¹à¤®à¤¤à¤¿ à¤¨à¤¹à¥€à¤‚",
+      reportTitle: "à¤‰à¤°à¥à¤µà¤°à¤• à¤¸à¥à¤à¤¾à¤µ à¤°à¤¿à¤ªà¥‹à¤°à¥à¤Ÿ",
+      reportRecommended: "à¤¸à¥à¤à¤¾à¤¯à¤¾ à¤—à¤¯à¤¾ à¤‰à¤°à¥à¤µà¤°à¤•",
+      reportInputSummary: "à¤‡à¤¨à¤ªà¥à¤Ÿ à¤¸à¤¾à¤°à¤¾à¤‚à¤¶",
+      reportNotes: "à¤¨à¥‹à¤Ÿà¥à¤¸",
+      search: (label) => `${label} à¤–à¥‹à¤œà¥‡à¤‚...`,
+      clearSearch: "à¤–à¥‹à¤œ à¤¸à¤¾à¤«à¤¼ à¤•à¤°à¥‡à¤‚",
+      noResults: (query) => `"${query}" à¤•à¥‡ à¤²à¤¿à¤ à¤•à¥‹à¤ˆ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤¨à¤¹à¥€à¤‚`,
+      optionsCount: (count, query) => `${count} à¤µà¤¿à¤•à¤²à¥à¤ª${query ? ` "${query}" à¤•à¥‡ à¤²à¤¿à¤` : ""}`,
+      selectLabel: (label) => `${label} à¤šà¥à¤¨à¥‡à¤‚...`,
+      selectError: (label) => `à¤•à¥ƒà¤ªà¤¯à¤¾ ${label} à¤šà¥à¤¨à¥‡à¤‚`,
+      winningModel: "à¤µà¤¿à¤œà¥‡à¤¤à¤¾ à¤®à¥‰à¤¡à¤²",
+      fillRemainingTitle: (count) => `à¤†à¤—à¥‡ à¤¬à¤¢à¤¼à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¬à¤¾à¤•à¥€ ${count} à¤«à¤¼à¥€à¤²à¥à¤¡ à¤­à¤°à¥‡à¤‚`,
+      loadingPrediction: "à¤¸à¥à¤à¤¾à¤µ à¤²à¥‹à¤¡ à¤¹à¥‹ à¤°à¤¹à¤¾ à¤¹à¥ˆ...",
     }
   }
 
@@ -174,39 +234,39 @@ function getFertilizerUi(language = "english") {
   }
 }
 
-// ─── Field config ──────────────────────────────────────────────────────────────
+// â”€â”€â”€ Field config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const FIELDS = [
-  { name: "Nitrogen",     label: "Nitrogen",      hint: "0 – 140",   unit: "kg/ha", icon: "N",  min: 0,   max: 140, step: 1   },
-  { name: "Potassium",    label: "Potassium",     hint: "0 – 205",   unit: "kg/ha", icon: "K",  min: 0,   max: 205, step: 1   },
-  { name: "Phosphorous",  label: "Phosphorous",   hint: "0 – 140",   unit: "kg/ha", icon: "P",  min: 0,   max: 140, step: 1   },
-  { name: "Temperature",  label: "Temperature",   hint: "0 – 50 °C", unit: "°C",   icon: "T",  min: 0,   max: 50,  step: 0.1 },
-  { name: "Humidity",     label: "Humidity",      hint: "0 – 100 %", unit: "%",    icon: "H",  min: 0,   max: 100, step: 0.1 },
-  { name: "Moisture",     label: "Soil Moisture", hint: "0 – 100 %", unit: "%",    icon: "M",  min: 0,   max: 100, step: 0.1 },
+  { name: "Nitrogen",     label: "Nitrogen",      hint: "0 â€“ 140",   unit: "kg/ha", icon: "N",  min: 0,   max: 140, step: 1   },
+  { name: "Potassium",    label: "Potassium",     hint: "0 â€“ 205",   unit: "kg/ha", icon: "K",  min: 0,   max: 205, step: 1   },
+  { name: "Phosphorous",  label: "Phosphorous",   hint: "0 â€“ 140",   unit: "kg/ha", icon: "P",  min: 0,   max: 140, step: 1   },
+  { name: "Temperature",  label: "Temperature",   hint: "0 â€“ 50 Â°C", unit: "Â°C",   icon: "T",  min: 0,   max: 50,  step: 0.1 },
+  { name: "Humidity",     label: "Humidity",      hint: "0 â€“ 100 %", unit: "%",    icon: "H",  min: 0,   max: 100, step: 0.1 },
+  { name: "Moisture",     label: "Soil Moisture", hint: "0 â€“ 100 %", unit: "%",    icon: "M",  min: 0,   max: 100, step: 0.1 },
 ]
 
 const SOIL_TYPES = [
-  { value: 'Sandy',  label: 'Sandy',  icon: '🟡', desc: 'Low water retention' },
-  { value: 'Loamy',  label: 'Loamy',  icon: '🟤', desc: 'Best for most crops' },
-  { value: 'Black',  label: 'Black',  icon: '⚫', desc: 'High moisture content' },
-  { value: 'Red',    label: 'Red',    icon: '🔴', desc: 'Iron-rich, porous' },
-  { value: 'Clayey', label: 'Clayey', icon: '🪨', desc: 'Heavy, water-retentive' },
+  { value: 'Sandy',  label: 'Sandy',  icon: 'ðŸŸ¡', desc: 'Low water retention' },
+  { value: 'Loamy',  label: 'Loamy',  icon: 'ðŸŸ¤', desc: 'Best for most crops' },
+  { value: 'Black',  label: 'Black',  icon: 'âš«', desc: 'High moisture content' },
+  { value: 'Red',    label: 'Red',    icon: 'ðŸ”´', desc: 'Iron-rich, porous' },
+  { value: 'Clayey', label: 'Clayey', icon: 'ðŸª¨', desc: 'Heavy, water-retentive' },
 ]
 
 const CROP_TYPES = [
-  { value: 'Maize',        label: 'Maize',        icon: '🌽', desc: 'Kharif cereal crop' },
-  { value: 'Sugarcane',    label: 'Sugarcane',    icon: '🎋', desc: 'High sugar content' },
-  { value: 'Cotton',       label: 'Cotton',       icon: '🌸', desc: 'Fiber cash crop' },
-  { value: 'Tobacco',      label: 'Tobacco',      icon: '🍃', desc: 'Commercial leaf crop' },
-  { value: 'Paddy',        label: 'Paddy',        icon: '🌾', desc: 'Wetland staple' },
-  { value: 'Barley',       label: 'Barley',       icon: '🌿', desc: 'Rabi cereal grain' },
-  { value: 'Wheat',        label: 'Wheat',        icon: '🌻', desc: 'Winter staple grain' },
-  { value: 'Millets',      label: 'Millets',      icon: '🌱', desc: 'Drought-resistant grain' },
-  { value: 'Oil seeds',    label: 'Oil seeds',    icon: '🫒', desc: 'Sunflower, mustard' },
-  { value: 'Pulses',       label: 'Pulses',       icon: '🫘', desc: 'Nitrogen-fixing legumes' },
-  { value: 'Ground Nuts',  label: 'Ground Nuts',  icon: '🥜', desc: 'Kharif oilseed crop' },
+  { value: 'Maize',        label: 'Maize',        icon: 'ðŸŒ½', desc: 'Kharif cereal crop' },
+  { value: 'Sugarcane',    label: 'Sugarcane',    icon: 'ðŸŽ‹', desc: 'High sugar content' },
+  { value: 'Cotton',       label: 'Cotton',       icon: 'ðŸŒ¸', desc: 'Fiber cash crop' },
+  { value: 'Tobacco',      label: 'Tobacco',      icon: 'ðŸƒ', desc: 'Commercial leaf crop' },
+  { value: 'Paddy',        label: 'Paddy',        icon: 'ðŸŒ¾', desc: 'Wetland staple' },
+  { value: 'Barley',       label: 'Barley',       icon: 'ðŸŒ¿', desc: 'Rabi cereal grain' },
+  { value: 'Wheat',        label: 'Wheat',        icon: 'ðŸŒ»', desc: 'Winter staple grain' },
+  { value: 'Millets',      label: 'Millets',      icon: 'ðŸŒ±', desc: 'Drought-resistant grain' },
+  { value: 'Oil seeds',    label: 'Oil seeds',    icon: 'ðŸ«’', desc: 'Sunflower, mustard' },
+  { value: 'Pulses',       label: 'Pulses',       icon: 'ðŸ«˜', desc: 'Nitrogen-fixing legumes' },
+  { value: 'Ground Nuts',  label: 'Ground Nuts',  icon: 'ðŸ¥œ', desc: 'Kharif oilseed crop' },
 ]
 
-// Encoding maps — must match training-time label encoding
+// Encoding maps â€” must match training-time label encoding
 const SOIL_MAP  = { Sandy: 4, Loamy: 2, Black: 0, Red: 3, Clayey: 1 }
 const CROP_MAP  = {
   Barley: 0, Cotton: 1, "Ground Nuts": 2, Maize: 3,
@@ -221,6 +281,23 @@ const EXAMPLE_DATA = {
   soil_type: "Loamy", crop_type: "Wheat",
 }
 
+function sanitizeDisplayText(value) {
+  return String(value ?? "")
+    .replace(/Ã¢â‚¬â€œ/g, "-")
+    .replace(/Ã‚Â°C/g, "deg C")
+    .replace(/Ã‚/g, "")
+    .replace(/Ã¢â‚¬â„¢/g, "'")
+    .replace(/Ã¢â‚¬Ëœ/g, "'")
+    .replace(/Ã¢â‚¬Å“/g, '"')
+    .replace(/Ã¢â‚¬Â/g, '"');
+}
+
+const DISPLAY_FIELDS = FIELDS.map((field) => ({
+  ...field,
+  hint: sanitizeDisplayText(field.hint),
+  unit: sanitizeDisplayText(field.unit),
+}));
+
 const INITIAL_FORM = FIELDS.reduce((acc, f) => ({ ...acc, [f.name]: "" }), {
   soil_type: "",
   crop_type: "",
@@ -231,12 +308,12 @@ const SESSION_KEY = 'fr-form-data'
 function getLocalizedFieldConfig(language = "english") {
   if (language === "hindi") {
     return {
-      Nitrogen: { label: "नाइट्रोजन" },
-      Potassium: { label: "पोटैशियम" },
-      Phosphorous: { label: "फॉस्फोरस" },
-      Temperature: { label: "तापमान" },
-      Humidity: { label: "नमी" },
-      Moisture: { label: "मिट्टी की नमी" },
+      Nitrogen: { label: "à¤¨à¤¾à¤‡à¤Ÿà¥à¤°à¥‹à¤œà¤¨" },
+      Potassium: { label: "à¤ªà¥‹à¤Ÿà¥ˆà¤¶à¤¿à¤¯à¤®" },
+      Phosphorous: { label: "à¤«à¥‰à¤¸à¥à¤«à¥‹à¤°à¤¸" },
+      Temperature: { label: "à¤¤à¤¾à¤ªà¤®à¤¾à¤¨" },
+      Humidity: { label: "à¤¨à¤®à¥€" },
+      Moisture: { label: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤•à¥€ à¤¨à¤®à¥€" },
     }
   }
   return {}
@@ -244,56 +321,56 @@ function getLocalizedFieldConfig(language = "english") {
 
 function getLocalizedSoilTypes(language = "english") {
   if (language === "hindi") {
-    return [
-      { value: 'Sandy', label: 'बलुई', icon: '🟡', desc: 'पानी कम रोकती है' },
-      { value: 'Loamy', label: 'दोमट', icon: '🟤', desc: 'अधिकतर फसलों के लिए उपयुक्त' },
-      { value: 'Black', label: 'काली', icon: '⚫', desc: 'नमी अधिक रोकती है' },
-      { value: 'Red', label: 'लाल', icon: '🔴', desc: 'लौह-समृद्ध और छिद्रयुक्त' },
-      { value: 'Clayey', label: 'चिकनी', icon: '🪨', desc: 'भारी और पानी रोकने वाली' },
-    ]
+    return normalizeLocalizedCopy([
+      { value: 'Sandy', label: 'à¤¬à¤²à¥à¤ˆ', icon: 'ðŸŸ¡', desc: 'à¤ªà¤¾à¤¨à¥€ à¤•à¤® à¤°à¥‹à¤•à¤¤à¥€ à¤¹à¥ˆ' },
+      { value: 'Loamy', label: 'à¤¦à¥‹à¤®à¤Ÿ', icon: 'ðŸŸ¤', desc: 'à¤…à¤§à¤¿à¤•à¤¤à¤° à¤«à¤¸à¤²à¥‹à¤‚ à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤' },
+      { value: 'Black', label: 'à¤•à¤¾à¤²à¥€', icon: 'âš«', desc: 'à¤¨à¤®à¥€ à¤…à¤§à¤¿à¤• à¤°à¥‹à¤•à¤¤à¥€ à¤¹à¥ˆ' },
+      { value: 'Red', label: 'à¤²à¤¾à¤²', icon: 'ðŸ”´', desc: 'à¤²à¥Œà¤¹-à¤¸à¤®à¥ƒà¤¦à¥à¤§ à¤”à¤° à¤›à¤¿à¤¦à¥à¤°à¤¯à¥à¤•à¥à¤¤' },
+      { value: 'Clayey', label: 'à¤šà¤¿à¤•à¤¨à¥€', icon: 'ðŸª¨', desc: 'à¤­à¤¾à¤°à¥€ à¤”à¤° à¤ªà¤¾à¤¨à¥€ à¤°à¥‹à¤•à¤¨à¥‡ à¤µà¤¾à¤²à¥€' },
+    ])
   }
   if (language === "hinglish") {
-    return [
-      { value: 'Sandy', label: 'Sandy', icon: '🟡', desc: 'Paani kam rokne wali' },
-      { value: 'Loamy', label: 'Loamy', icon: '🟤', desc: 'Most crops ke liye best' },
-      { value: 'Black', label: 'Black', icon: '⚫', desc: 'Moisture zyada hold karti hai' },
-      { value: 'Red', label: 'Red', icon: '🔴', desc: 'Iron-rich aur porous' },
-      { value: 'Clayey', label: 'Clayey', icon: '🪨', desc: 'Heavy aur water-retentive' },
-    ]
+    return normalizeLocalizedCopy([
+      { value: 'Sandy', label: 'Sandy', icon: 'ðŸŸ¡', desc: 'Paani kam rokne wali' },
+      { value: 'Loamy', label: 'Loamy', icon: 'ðŸŸ¤', desc: 'Most crops ke liye best' },
+      { value: 'Black', label: 'Black', icon: 'âš«', desc: 'Moisture zyada hold karti hai' },
+      { value: 'Red', label: 'Red', icon: 'ðŸ”´', desc: 'Iron-rich aur porous' },
+      { value: 'Clayey', label: 'Clayey', icon: 'ðŸª¨', desc: 'Heavy aur water-retentive' },
+    ])
   }
   return SOIL_TYPES
 }
 
 function getLocalizedCropTypes(language = "english") {
   if (language === "hindi") {
-    return [
-      { value: 'Maize', label: 'मक्का', icon: '🌽', desc: 'खरीफ अनाज फसल' },
-      { value: 'Sugarcane', label: 'गन्ना', icon: '🎋', desc: 'उच्च शर्करा वाली फसल' },
-      { value: 'Cotton', label: 'कपास', icon: '🌸', desc: 'रेशेदार नकदी फसल' },
-      { value: 'Tobacco', label: 'तंबाकू', icon: '🍃', desc: 'व्यावसायिक पत्ती फसल' },
-      { value: 'Paddy', label: 'धान', icon: '🌾', desc: 'गीली भूमि की मुख्य फसल' },
-      { value: 'Barley', label: 'जौ', icon: '🌿', desc: 'रबी अनाज फसल' },
-      { value: 'Wheat', label: 'गेहूँ', icon: '🌻', desc: 'सर्दियों की मुख्य फसल' },
-      { value: 'Millets', label: 'मोटा अनाज', icon: '🌱', desc: 'सूखा-सहनशील अनाज' },
-      { value: 'Oil seeds', label: 'तिलहन', icon: '🫒', desc: 'सरसों, सूरजमुखी आदि' },
-      { value: 'Pulses', label: 'दलहन', icon: '🫘', desc: 'नाइट्रोजन स्थिर करने वाली फसलें' },
-      { value: 'Ground Nuts', label: 'मूंगफली', icon: '🥜', desc: 'खरीफ तिलहन फसल' },
-    ]
+    return normalizeLocalizedCopy([
+      { value: 'Maize', label: 'à¤®à¤•à¥à¤•à¤¾', icon: 'ðŸŒ½', desc: 'à¤–à¤°à¥€à¤« à¤…à¤¨à¤¾à¤œ à¤«à¤¸à¤²' },
+      { value: 'Sugarcane', label: 'à¤—à¤¨à¥à¤¨à¤¾', icon: 'ðŸŽ‹', desc: 'à¤‰à¤šà¥à¤š à¤¶à¤°à¥à¤•à¤°à¤¾ à¤µà¤¾à¤²à¥€ à¤«à¤¸à¤²' },
+      { value: 'Cotton', label: 'à¤•à¤ªà¤¾à¤¸', icon: 'ðŸŒ¸', desc: 'à¤°à¥‡à¤¶à¥‡à¤¦à¤¾à¤° à¤¨à¤•à¤¦à¥€ à¤«à¤¸à¤²' },
+      { value: 'Tobacco', label: 'à¤¤à¤‚à¤¬à¤¾à¤•à¥‚', icon: 'ðŸƒ', desc: 'à¤µà¥à¤¯à¤¾à¤µà¤¸à¤¾à¤¯à¤¿à¤• à¤ªà¤¤à¥à¤¤à¥€ à¤«à¤¸à¤²' },
+      { value: 'Paddy', label: 'à¤§à¤¾à¤¨', icon: 'ðŸŒ¾', desc: 'à¤—à¥€à¤²à¥€ à¤­à¥‚à¤®à¤¿ à¤•à¥€ à¤®à¥à¤–à¥à¤¯ à¤«à¤¸à¤²' },
+      { value: 'Barley', label: 'à¤œà¥Œ', icon: 'ðŸŒ¿', desc: 'à¤°à¤¬à¥€ à¤…à¤¨à¤¾à¤œ à¤«à¤¸à¤²' },
+      { value: 'Wheat', label: 'à¤—à¥‡à¤¹à¥‚à¤', icon: 'ðŸŒ»', desc: 'à¤¸à¤°à¥à¤¦à¤¿à¤¯à¥‹à¤‚ à¤•à¥€ à¤®à¥à¤–à¥à¤¯ à¤«à¤¸à¤²' },
+      { value: 'Millets', label: 'à¤®à¥‹à¤Ÿà¤¾ à¤…à¤¨à¤¾à¤œ', icon: 'ðŸŒ±', desc: 'à¤¸à¥‚à¤–à¤¾-à¤¸à¤¹à¤¨à¤¶à¥€à¤² à¤…à¤¨à¤¾à¤œ' },
+      { value: 'Oil seeds', label: 'à¤¤à¤¿à¤²à¤¹à¤¨', icon: 'ðŸ«’', desc: 'à¤¸à¤°à¤¸à¥‹à¤‚, à¤¸à¥‚à¤°à¤œà¤®à¥à¤–à¥€ à¤†à¤¦à¤¿' },
+      { value: 'Pulses', label: 'à¤¦à¤²à¤¹à¤¨', icon: 'ðŸ«˜', desc: 'à¤¨à¤¾à¤‡à¤Ÿà¥à¤°à¥‹à¤œà¤¨ à¤¸à¥à¤¥à¤¿à¤° à¤•à¤°à¤¨à¥‡ à¤µà¤¾à¤²à¥€ à¤«à¤¸à¤²à¥‡à¤‚' },
+      { value: 'Ground Nuts', label: 'à¤®à¥‚à¤‚à¤—à¤«à¤²à¥€', icon: 'ðŸ¥œ', desc: 'à¤–à¤°à¥€à¤« à¤¤à¤¿à¤²à¤¹à¤¨ à¤«à¤¸à¤²' },
+    ])
   }
   if (language === "hinglish") {
-    return [
-      { value: 'Maize', label: 'Maize', icon: '🌽', desc: 'Kharif cereal crop' },
-      { value: 'Sugarcane', label: 'Sugarcane', icon: '🎋', desc: 'High sugar content' },
-      { value: 'Cotton', label: 'Cotton', icon: '🌸', desc: 'Fiber cash crop' },
-      { value: 'Tobacco', label: 'Tobacco', icon: '🍃', desc: 'Commercial leaf crop' },
-      { value: 'Paddy', label: 'Paddy', icon: '🌾', desc: 'Wetland staple' },
-      { value: 'Barley', label: 'Barley', icon: '🌿', desc: 'Rabi cereal crop' },
-      { value: 'Wheat', label: 'Wheat', icon: '🌻', desc: 'Winter staple crop' },
-      { value: 'Millets', label: 'Millets', icon: '🌱', desc: 'Drought-resistant grain' },
-      { value: 'Oil seeds', label: 'Oil seeds', icon: '🫒', desc: 'Mustard, sunflower wagairah' },
-      { value: 'Pulses', label: 'Pulses', icon: '🫘', desc: 'Nitrogen-fixing legumes' },
-      { value: 'Ground Nuts', label: 'Ground Nuts', icon: '🥜', desc: 'Kharif oilseed crop' },
-    ]
+    return normalizeLocalizedCopy([
+      { value: 'Maize', label: 'Maize', icon: 'ðŸŒ½', desc: 'Kharif cereal crop' },
+      { value: 'Sugarcane', label: 'Sugarcane', icon: 'ðŸŽ‹', desc: 'High sugar content' },
+      { value: 'Cotton', label: 'Cotton', icon: 'ðŸŒ¸', desc: 'Fiber cash crop' },
+      { value: 'Tobacco', label: 'Tobacco', icon: 'ðŸƒ', desc: 'Commercial leaf crop' },
+      { value: 'Paddy', label: 'Paddy', icon: 'ðŸŒ¾', desc: 'Wetland staple' },
+      { value: 'Barley', label: 'Barley', icon: 'ðŸŒ¿', desc: 'Rabi cereal crop' },
+      { value: 'Wheat', label: 'Wheat', icon: 'ðŸŒ»', desc: 'Winter staple crop' },
+      { value: 'Millets', label: 'Millets', icon: 'ðŸŒ±', desc: 'Drought-resistant grain' },
+      { value: 'Oil seeds', label: 'Oil seeds', icon: 'ðŸ«’', desc: 'Mustard, sunflower wagairah' },
+      { value: 'Pulses', label: 'Pulses', icon: 'ðŸ«˜', desc: 'Nitrogen-fixing legumes' },
+      { value: 'Ground Nuts', label: 'Ground Nuts', icon: 'ðŸ¥œ', desc: 'Kharif oilseed crop' },
+    ])
   }
   return CROP_TYPES
 }
@@ -303,9 +380,9 @@ function getLocalizedSeasonLabel(season, language = "english") {
 
   const seasonKey = String(season).toLowerCase()
   const labels = {
-    kharif: { english: "Kharif", hindi: "खरीफ", hinglish: "Kharif" },
-    rabi: { english: "Rabi", hindi: "रबी", hinglish: "Rabi" },
-    zaid: { english: "Zaid", hindi: "ज़ायद", hinglish: "Zaid" },
+    kharif: { english: "Kharif", hindi: "à¤–à¤°à¥€à¤«", hinglish: "Kharif" },
+    rabi: { english: "Rabi", hindi: "à¤°à¤¬à¥€", hinglish: "Rabi" },
+    zaid: { english: "Zaid", hindi: "à¤œà¤¼à¤¾à¤¯à¤¦", hinglish: "Zaid" },
   }
 
   return labels[seasonKey]?.[language] || season
@@ -328,7 +405,7 @@ function sanitizePrefillForm(prefill) {
   return normalized
 }
 
-// ─── Custom Dropdown ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Custom Dropdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CustomDropdown({ id, label, icon, options, value, onChange, onTouch, hasError, ui }) {
   const [open, setOpen]             = useState(false)
   const [query, setQuery]           = useState('')
@@ -419,7 +496,7 @@ function CustomDropdown({ id, label, icon, options, value, onChange, onTouch, ha
     >
       {/* Trigger button
           NOTE: aria-invalid is NOT valid on role=button / <button>.
-          Error state is communicated via aria-describedby → the visible
+          Error state is communicated via aria-describedby â†’ the visible
           error message, and the visual fr-dropdown--error border styling. */}
       <button
         type="button"
@@ -445,11 +522,11 @@ function CustomDropdown({ id, label, icon, options, value, onChange, onTouch, ha
           )}
         </div>
         <span className={`fr-dropdown__chevron${open ? ' fr-dropdown__chevron--open' : ''}`} aria-hidden="true">
-          ›
+          â€º
         </span>
       </button>
 
-      {/* Inline error — linked via aria-describedby on the trigger */}
+      {/* Inline error â€” linked via aria-describedby on the trigger */}
       {hasError && (
         <span id={errorId} className="fr-field-error" role="alert">
           {ui.selectError(label)}
@@ -461,7 +538,7 @@ function CustomDropdown({ id, label, icon, options, value, onChange, onTouch, ha
         <div className="fr-dropdown__panel" role="listbox" aria-label={`${label} options`}>
           {/* Search */}
           <div className="fr-dropdown__search-wrap">
-            <span className="fr-dropdown__search-icon" aria-hidden="true">⌕</span>
+            <span className="fr-dropdown__search-icon" aria-hidden="true">âŒ•</span>
             <input
               ref={inputRef}
               className="fr-dropdown__search"
@@ -479,7 +556,7 @@ function CustomDropdown({ id, label, icon, options, value, onChange, onTouch, ha
                 onClick={() => { setQuery(''); setFocusedIdx(-1); inputRef.current?.focus() }}
                 aria-label={ui.clearSearch}
               >
-                ✕
+                âœ•
               </button>
             )}
           </div>
@@ -507,7 +584,7 @@ function CustomDropdown({ id, label, icon, options, value, onChange, onTouch, ha
                     <span className="fr-dropdown__option-desc">{opt.desc}</span>
                   </span>
                   {opt.value === value && (
-                    <span className="fr-dropdown__option-check" aria-label={label}>✓</span>
+                    <span className="fr-dropdown__option-check" aria-label={label}>âœ“</span>
                   )}
                 </button>
               ))
@@ -524,7 +601,7 @@ function CustomDropdown({ id, label, icon, options, value, onChange, onTouch, ha
   )
 }
 
-// ─── Confidence bar ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Confidence bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ConfidenceBar({ value }) {
   const color = value >= 80 ? '#c8f55a' : value >= 60 ? '#f5c842' : '#f55a5a'
   return (
@@ -537,7 +614,7 @@ function ConfidenceBar({ value }) {
   )
 }
 
-// ─── Model badge ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Model badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ModelBadge({ label, prediction, probability, isFinal, delay, ui }) {
   return (
     <div
@@ -546,7 +623,7 @@ function ModelBadge({ label, prediction, probability, isFinal, delay, ui }) {
     >
       <div className="fr-model-badge__header">
         <span className="fr-model-badge__label">{label}</span>
-        {isFinal && <span className="fr-model-badge__crown" aria-label={ui.winningModel}>★ {ui.winningModel}</span>}
+        {isFinal && <span className="fr-model-badge__crown" aria-label={ui.winningModel}>â˜… {ui.winningModel}</span>}
       </div>
       <span className="fr-model-badge__pred">{prediction}</span>
       <ConfidenceBar value={probability} />
@@ -554,7 +631,7 @@ function ModelBadge({ label, prediction, probability, isFinal, delay, ui }) {
   )
 }
 
-// ─── Skeleton loader ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Skeleton loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function LoadingSkeleton({ ui }) {
   return (
     <div className="fr-skeleton" role="status" aria-live="polite" aria-label={ui.loadingPrediction}>
@@ -568,10 +645,10 @@ function LoadingSkeleton({ ui }) {
   )
 }
 
-// ─── Result view ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Result view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function FertilizerResult({ data, formData, onBack }) {
   const { language } = useLanguage()
-  const ui         = getFertilizerUi(language)
+  const ui         = normalizeLocalizedCopy(getFertilizerUi(language))
   const fert       = fertilizerData[data.final_prediction]
   const xgbConf    = Math.min(100, Math.max(0, parseFloat(data.xgb_model_probability)))
   const rfConf     = Math.min(100, Math.max(0, parseFloat(data.rf_model_probability)))
@@ -579,13 +656,24 @@ function FertilizerResult({ data, formData, onBack }) {
 
   const winningConf = Math.max(xgbConf, rfConf, svmConf)
   const confClass   = winningConf >= 80 ? 'high' : winningConf >= 60 ? 'mid' : 'low'
-  const suitability = getSuitabilityMeta(winningConf, language)
+  const suitability = normalizeLocalizedCopy(getSuitabilityMeta(winningConf, language))
 
-  const agreeingModels = [
-    data.xgb_model_prediction === data.final_prediction && 'XGBoost',
-    data.rf_model_prediction  === data.final_prediction && 'Random Forest',
-    data.svm_model_prediction === data.final_prediction && 'SVM',
-  ].filter(Boolean)
+    const agreeingModels = [
+      data.xgb_model_prediction === data.final_prediction && 'XGBoost',
+      data.rf_model_prediction  === data.final_prediction && 'Random Forest',
+      data.svm_model_prediction === data.final_prediction && 'SVM',
+    ].filter(Boolean)
+
+    const predictions = [data.xgb_model_prediction, data.rf_model_prediction, data.svm_model_prediction]
+    const alternativeConf = [xgbConf, rfConf, svmConf]
+      .filter((conf, index) => predictions[index] !== data.final_prediction)
+      .sort((a, b) => b - a)[0]
+
+    const explanationCards = normalizeLocalizedCopy([
+      getConfidenceExplanation(winningConf, language),
+      getConsensusExplanation(agreeingModels.length, 3, language),
+      getDecisionEdgeExplanation(winningConf, alternativeConf, language),
+    ])
 
   const [imgError, setImgError] = useState(false)
   const [copied, setCopied]     = useState(false)
@@ -675,16 +763,24 @@ function FertilizerResult({ data, formData, onBack }) {
           <span>{suitability.note}</span>
         </div>
         <div className="fr-result__summary">
+        <div className="fr-explain-grid">
+          {explanationCards.map((card) => (
+            <div key={`${card.title}-${card.detail}`} className="fr-explain-card">
+              <div className="fr-explain-card__label">{card.title}</div>
+              <div className="fr-explain-card__text">{card.detail}</div>
+            </div>
+          ))}
+        </div>
         {agreeingModels.length > 0 && (
           <div className="fr-agree-row">
-            <span className="fr-agree-row__icon" aria-hidden="true">✓</span>
+            <span className="fr-agree-row__icon" aria-hidden="true">âœ“</span>
             <span>{ui.supportedBy} <strong>{agreeingModels.join(', ')}</strong></span>
           </div>
         )}
 
         {winningConf < 60 && (
           <div className="fr-warning" role="alert">
-            ⚠ {ui.lowConfidence}
+            âš  {ui.lowConfidence}
           </div>
         )}
 
@@ -723,10 +819,10 @@ function FertilizerResult({ data, formData, onBack }) {
         <div className="fr-result__actions">
           <button className="fr-btn fr-btn--ghost" onClick={handleDownload}>{ui.downloadResult}</button>
           <button className="fr-btn fr-btn--ghost" onClick={handleCopy} aria-live="polite">
-            {copied ? `✓ ${ui.copied}` : `⎘ ${ui.copyResult}`}
+            {copied ? `âœ“ ${ui.copied}` : `âŽ˜ ${ui.copyResult}`}
           </button>
           <button className="fr-btn fr-btn--ghost" onClick={onBack}>
-            ← {ui.backToPrediction}
+            â† {ui.backToPrediction}
           </button>
         </div>
       </div>
@@ -734,18 +830,19 @@ function FertilizerResult({ data, formData, onBack }) {
   )
 }
 
-// ─── Main component ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function FertilizerRecommender() {
   const history = useHistory()
   const { t, language } = useLanguage()
-  const ui = getFertilizerUi(language)
+  const ui = normalizeLocalizedCopy(getFertilizerUi(language))
   const location = useLocation()
-  const localizedFields = FIELDS.map((field) => ({
+  const localizedFieldConfig = normalizeLocalizedCopy(getLocalizedFieldConfig(language))
+  const localizedFields = DISPLAY_FIELDS.map((field) => ({
     ...field,
-    ...(getLocalizedFieldConfig(language)[field.name] || {}),
+    ...(localizedFieldConfig[field.name] || {}),
   }))
-  const localizedSoilTypes = getLocalizedSoilTypes(language)
-  const localizedCropTypes = getLocalizedCropTypes(language)
+  const localizedSoilTypes = normalizeLocalizedCopy(getLocalizedSoilTypes(language))
+  const localizedCropTypes = normalizeLocalizedCopy(getLocalizedCropTypes(language))
   const sourceCrop = location.state?.sourceCrop || ""
   const sourceContext = location.state?.sourceContext || null
   const [formData,       setFormData]       = useState(() => {
@@ -830,29 +927,26 @@ function FertilizerRecommender() {
         Potassium:    parseFloat(formData.Potassium),
         Phosphorous:  parseFloat(formData.Phosphorous),
       }
-      const response = await api.post("/predict_fertilizer", payload, {
-        headers: { "Content-Type": "application/json" },
-        timeout: 8000,
-      })
+      const result = await predictFertilizer(payload)
       savePredictionHistory({
         type: "fertilizer",
-        result: fertilizerData[response.data.final_prediction]?.title || response.data.final_prediction,
+        result: fertilizerData[result.final_prediction]?.title || result.final_prediction,
         confidence: Math.max(
-          parseFloat(response.data.xgb_model_probability) || 0,
-          parseFloat(response.data.rf_model_probability) || 0,
-          parseFloat(response.data.svm_model_probability) || 0
+          parseFloat(result.xgb_model_probability) || 0,
+          parseFloat(result.rf_model_probability) || 0,
+          parseFloat(result.svm_model_probability) || 0
         ),
         inputs: { ...formData },
       })
-      setPredictionData(response.data)
+      setPredictionData(result)
       // Clear persisted form on success
       try { sessionStorage.removeItem(SESSION_KEY) } catch {}
     } catch (error) {
       console.error(error)
       setPredictionData({
         error: error.code === "ECONNABORTED"
-          ? (language === "hindi" ? "अनुरोध में समय लग गया। कृपया फिर कोशिश करें।" : language === "hinglish" ? "Request timeout ho gaya. Dobara try karo." : "Request timed out. Please try again.")
-          : error.response?.data?.error || (language === "hindi" ? "सर्वर से संपर्क नहीं हो सका। कृपया फिर कोशिश करें।" : language === "hinglish" ? "Server tak nahi pahunch paaye. Dobara try karo." : "Unable to reach the server. Please try again."),
+          ? (language === "hindi" ? "à¤…à¤¨à¥à¤°à¥‹à¤§ à¤®à¥‡à¤‚ à¤¸à¤®à¤¯ à¤²à¤— à¤—à¤¯à¤¾à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤«à¤¿à¤° à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤" : language === "hinglish" ? "Request timeout ho gaya. Dobara try karo." : "Request timed out. Please try again.")
+          : error.response?.data?.error || (language === "hindi" ? "à¤¸à¤°à¥à¤µà¤° à¤¸à¥‡ à¤¸à¤‚à¤ªà¤°à¥à¤• à¤¨à¤¹à¥€à¤‚ à¤¹à¥‹ à¤¸à¤•à¤¾à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤«à¤¿à¤° à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤" : language === "hinglish" ? "Server tak nahi pahunch paaye. Dobara try karo." : "Unable to reach the server. Please try again."),
       })
     } finally {
       setLoadingStatus(false)
@@ -885,7 +979,7 @@ function FertilizerRecommender() {
       <div className="fr-card" role="main">
         {/* Header */}
         <div className="fr-card__header">
-          <div className="fr-card__icon" aria-hidden="true">🌱</div>
+          <div className="fr-card__icon" aria-hidden="true">ðŸŒ±</div>
           <div style={{ flex: 1 }}>
             <h1 className="fr-card__title">{t('fertilizerTitle')}</h1>
             <p className="fr-card__sub">
@@ -928,7 +1022,7 @@ function FertilizerRecommender() {
 
         {predictionData.error && (
           <div className="fr-alert" role="alert">
-            <span className="fr-alert__icon" aria-hidden="true">⚠</span>
+            <span className="fr-alert__icon" aria-hidden="true">âš </span>
             <span>{predictionData.error}</span>
             <button
               type="button"
@@ -936,7 +1030,7 @@ function FertilizerRecommender() {
               onClick={handleRetry}
               aria-label={ui.dismissError}
             >
-              {ui.retry} ↺
+              {ui.retry} â†º
             </button>
           </div>
         )}
@@ -991,7 +1085,7 @@ function FertilizerRecommender() {
           <CustomDropdown
             id="soil_type"
             label={ui.soilType}
-            icon="🪨"
+            icon="ðŸª¨"
             options={localizedSoilTypes}
             value={formData.soil_type}
             onChange={(val) => handleDropdownChange('soil_type', val)}
@@ -1002,7 +1096,7 @@ function FertilizerRecommender() {
           <CustomDropdown
             id="crop_type"
             label={ui.cropType}
-            icon="🌾"
+            icon="ðŸŒ¾"
             options={localizedCropTypes}
             value={formData.crop_type}
             onChange={(val) => handleDropdownChange('crop_type', val)}
@@ -1033,7 +1127,7 @@ function FertilizerRecommender() {
           aria-describedby="fr-submit-hint"
         >
           <span>{ui.analysePredict}</span>
-          <span className="fr-btn__arrow" aria-hidden="true">→</span>
+          <span className="fr-btn__arrow" aria-hidden="true">â†’</span>
         </button>
 
         <p
@@ -1043,7 +1137,7 @@ function FertilizerRecommender() {
           aria-live="polite"
         >
           {isFormValid
-            ? `✓ ${ui.allFieldsComplete}`
+            ? `âœ“ ${ui.allFieldsComplete}`
             : ui.fieldsRemaining(totalFields - filledCount)}
         </p>
       </div>
@@ -1052,3 +1146,6 @@ function FertilizerRecommender() {
 }
 
 export default FertilizerRecommender
+
+
+

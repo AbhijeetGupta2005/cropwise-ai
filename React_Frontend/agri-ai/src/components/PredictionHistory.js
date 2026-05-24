@@ -4,8 +4,8 @@ import { clearPredictionHistory, getPredictionHistory } from "../utils/predictio
 import { useLanguage } from "../context/LanguageContext";
 import "../styles/PredictionHistory.css";
 
-function formatTimestamp(value) {
-  if (!value) return "Unknown time";
+function formatTimestamp(value, fallbackLabel) {
+  if (!value) return fallbackLabel;
 
   try {
     return new Date(value).toLocaleString("en-IN", {
@@ -43,6 +43,7 @@ function getTopPairs(countMap, limit = 3) {
 }
 
 function HistoryCard({ item }) {
+  const { t } = useLanguage();
   const isCrop = item.type === "crop";
   const inputs = item.inputs || {};
 
@@ -51,16 +52,16 @@ function HistoryCard({ item }) {
       <div className="ph-card__top">
         <div>
           <div className={`ph-card__pill${isCrop ? "" : " ph-card__pill--fertilizer"}`}>
-            {isCrop ? "Crop Prediction" : "Fertilizer Prediction"}
+            {isCrop ? t("historyCropPredictionLabel") : t("historyFertilizerPredictionLabel")}
           </div>
-          <h2 className="ph-card__title">{item.result || "Prediction saved"}</h2>
+          <h2 className="ph-card__title">{item.result || t("historyPredictionSaved")}</h2>
         </div>
-        <div className="ph-card__time">{formatTimestamp(item.createdAt)}</div>
+        <div className="ph-card__time">{formatTimestamp(item.createdAt, t("historyUnknownTime"))}</div>
       </div>
 
       {item.confidence !== undefined && item.confidence !== null && (
         <div className="ph-card__confidence">
-          <span>Confidence</span>
+          <span>{t("historyConfidenceLabel")}</span>
           <strong>{Number(item.confidence).toFixed(2)}%</strong>
         </div>
       )}
@@ -162,28 +163,28 @@ function PredictionHistory() {
 
         <div className="ph-stats">
           <div className="ph-stat-card">
-            <span className="ph-stat-card__label">Total Saved</span>
+            <span className="ph-stat-card__label">{t("historyTotalSaved")}</span>
             <strong className="ph-stat-card__value">{entries.length}</strong>
           </div>
           <div className="ph-stat-card">
-            <span className="ph-stat-card__label">Crop Predictions</span>
+            <span className="ph-stat-card__label">{t("historyCropPredictions")}</span>
             <strong className="ph-stat-card__value">{cropEntries.length}</strong>
           </div>
           <div className="ph-stat-card">
-            <span className="ph-stat-card__label">Fertilizer Predictions</span>
+            <span className="ph-stat-card__label">{t("historyFertilizerPredictions")}</span>
             <strong className="ph-stat-card__value">{fertilizerEntries.length}</strong>
           </div>
           <div className="ph-stat-card">
-            <span className="ph-stat-card__label">Average Confidence</span>
+            <span className="ph-stat-card__label">{t("historyAverageConfidence")}</span>
             <strong className="ph-stat-card__value">{avgConfidence.toFixed(1)}%</strong>
           </div>
         </div>
 
         <div className="ph-insights">
           <div className="ph-insight-card">
-            <div className="ph-insight-card__title">Most Predicted Crops</div>
+            <div className="ph-insight-card__title">{t("historyMostPredictedCrops")}</div>
             {topCrops.length === 0 ? (
-              <div className="ph-insight-card__empty">No crop predictions yet</div>
+              <div className="ph-insight-card__empty">{t("historyNoCropPredictions")}</div>
             ) : (
               topCrops.map(([label, count]) => (
                 <div key={label} className="ph-insight-row">
@@ -195,9 +196,9 @@ function PredictionHistory() {
           </div>
 
           <div className="ph-insight-card">
-            <div className="ph-insight-card__title">Most Recommended Fertilizers</div>
+            <div className="ph-insight-card__title">{t("historyMostRecommendedFertilizers")}</div>
             {topFertilizers.length === 0 ? (
-              <div className="ph-insight-card__empty">No fertilizer predictions yet</div>
+              <div className="ph-insight-card__empty">{t("historyNoFertilizerPredictions")}</div>
             ) : (
               topFertilizers.map(([label, count]) => (
                 <div key={label} className="ph-insight-row">
@@ -209,32 +210,32 @@ function PredictionHistory() {
           </div>
 
           <div className="ph-insight-card">
-            <div className="ph-insight-card__title">Latest Activity</div>
+            <div className="ph-insight-card__title">{t("historyLatestActivity")}</div>
             {latestEntry ? (
               <>
                 <div className="ph-insight-row">
-                  <span>Type</span>
-                  <strong>{latestEntry.type === "crop" ? "Crop" : "Fertilizer"}</strong>
+                  <span>{t("historyType")}</span>
+                  <strong>{latestEntry.type === "crop" ? t("historyCrop") : t("historyFertilizer")}</strong>
                 </div>
                 <div className="ph-insight-row">
-                  <span>Result</span>
+                  <span>{t("historyResult")}</span>
                   <strong>{latestEntry.result}</strong>
                 </div>
                 <div className="ph-insight-row">
-                  <span>Saved</span>
-                  <strong>{formatTimestamp(latestEntry.createdAt)}</strong>
+                  <span>{t("historySaved")}</span>
+                  <strong>{formatTimestamp(latestEntry.createdAt, t("historyUnknownTime"))}</strong>
                 </div>
               </>
             ) : (
-              <div className="ph-insight-card__empty">No activity yet</div>
+              <div className="ph-insight-card__empty">{t("historyNoActivity")}</div>
             )}
           </div>
         </div>
 
         {filtered.length === 0 ? (
           <div className="ph-empty">
-            <div className="ph-empty__title">No saved predictions yet</div>
-            <p className="ph-empty__copy">Run a crop or fertilizer prediction and it will show up here automatically.</p>
+            <div className="ph-empty__title">{t("historyNoSavedPredictions")}</div>
+            <p className="ph-empty__copy">{t("historyEmptyCopy")}</p>
           </div>
         ) : (
           <div className="ph-grid">

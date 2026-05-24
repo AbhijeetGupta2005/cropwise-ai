@@ -4,6 +4,7 @@ from flask_cors import CORS
 import os
 import json
 import time
+import logging
 import numpy as np
 from collections import Counter
 import requests
@@ -15,6 +16,7 @@ from joblib import load
 # =========================
 app = Flask(__name__)
 CORS(app)
+app.logger.setLevel(logging.INFO)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -72,6 +74,29 @@ def safe_float(value, name):
 def require_json_object(data):
     if not isinstance(data, dict):
         raise ValueError("Request body must be a JSON object.")
+
+
+def get_json_payload():
+    data = request.get_json(silent=True)
+    require_json_object(data)
+    return data
+
+
+def error_response(message, status_code=400, **extra):
+    payload = {"error": message}
+    payload.update(extra)
+    return jsonify(payload), status_code
+
+
+def server_error_response():
+    return error_response("Internal server error. Please try again later.", 500)
+
+
+def normalize_language(value):
+    language = str(value or "english").strip().lower()
+    if language not in {"english", "hindi", "hinglish"}:
+        raise ValueError("Unsupported language. Use 'english', 'hindi', or 'hinglish'.")
+    return language
 
 
 def validate_required_fields(data, fields):
@@ -225,10 +250,221 @@ def call_gemini(prompt, temperature=0.4):
 
 def parse_gemini_json_array(text):
     raw = text.replace("```json", "").replace("```", "").strip()
-    parsed = json.loads(raw)
+    if not raw:
+        raise ValueError("Gemini returned an empty response.")
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError("Gemini response did not contain a valid JSON array.")
+        parsed = json.loads(raw[start : end + 1])
     if not isinstance(parsed, list):
         raise ValueError("Gemini response was not a JSON array.")
     return parsed
+
+
+def normalize_scale(value, allowed_values, default):
+    normalized = str(value or "").strip().lower()
+    for candidate in allowed_values:
+        if normalized == candidate.lower():
+            return candidate
+    return default
+
+
+def normalize_advisory_item(item, default_source="gemini"):
+    if not isinstance(item, dict):
+        raise ValueError("Each advisory item must be a JSON object.")
+
+    crop = str(item.get("crop") or "").strip()
+    if not crop:
+        raise ValueError("Each advisory item must include a crop name.")
+
+    reason = str(item.get("reason") or "").strip() or "No explanation was returned."
+    confidence = normalize_scale(item.get("confidence"), ["High", "Medium", "Low"], "Medium")
+    season_fit = normalize_scale(item.get("season_fit"), ["Perfect", "Good", "Poor"], "Good")
+    water_need = normalize_scale(item.get("water_need"), ["High", "Medium", "Low"], "Medium")
+    soil_type = str(item.get("soil_type") or "General agricultural soil").strip()
+    source = str(item.get("source") or default_source).strip().lower()
+
+    return {
+        "crop": crop,
+        "reason": reason,
+        "confidence": confidence,
+        "season_fit": season_fit,
+        "water_need": water_need,
+        "soil_type": soil_type,
+        "source": source,
+    }
+
+
+def advisory_response(items, mode, source, warning=None):
+    payload = {
+        "items": items,
+        "meta": {
+            "mode": mode,
+            "source": source,
+        },
+    }
+    if warning:
+        payload["meta"]["warning"] = warning
+        payload["meta"]["warning_code"] = "live_service_unavailable"
+    return jsonify(payload)
+
+
+def follow_up_response(reply, mode, source, warning=None):
+    payload = {
+        "reply": reply,
+        "meta": {
+            "mode": mode,
+            "source": source,
+        },
+    }
+    if warning:
+        payload["meta"]["warning"] = warning
+        payload["meta"]["warning_code"] = "live_service_unavailable"
+    return jsonify(payload)
+
+
+def run_ensemble_prediction(input_data, pipelines, label_lookup, model_keys):
+    predictions = [pipeline.predict(input_data)[0] for pipeline in pipelines]
+    probabilities = [max(pipeline.predict_proba(input_data)[0]) for pipeline in pipelines]
+    labels = [label_lookup[prediction] for prediction in predictions]
+
+    counts = Counter(labels)
+    most_common = counts.most_common()
+    if most_common[0][1] == 1:
+        final_label = labels[probabilities.index(max(probabilities))]
+    else:
+        final_label = most_common[0][0]
+
+    response = {"final_prediction": final_label}
+    for key, label, probability in zip(model_keys, labels, probabilities):
+        response[f"{key}_model_prediction"] = label
+        response[f"{key}_model_probability"] = round(probability * 100, 2)
+    return response
+
+
+
+def soften_fallback_reason_text(reason, language):
+    text = str(reason or "").strip()
+    if not text:
+        return text
+
+    if language == "english":
+        replacements = {
+            "Rule-based fallback for this region: ": "Fallback guidance for this region: ",
+            "Rule-based fallback for Assam: ": "Fallback guidance for Assam: ",
+            "Rule-based fallback for the Cauvery Delta: ": "Fallback guidance for the Cauvery Delta: ",
+            "Rule-based fallback: ": "Fallback guidance: ",
+        }
+        for old, new in replacements.items():
+            if text.startswith(old):
+                return text.replace(old, new, 1)
+
+    return text
+
+
+def get_recommendation_language_instruction(language):
+    if language == "hindi":
+        return (
+            "Write only the reason values in Hindi. Keep crop names, JSON keys, confidence, "
+            "season_fit, water_need, and soil_type values in English."
+        )
+    if language == "hinglish":
+        return (
+            "Write only the reason values in Hinglish using Hindi words written in English letters. "
+            "Keep crop names, JSON keys, confidence, season_fit, water_need, and soil_type values in English."
+        )
+    return "Write all values in simple English."
+
+
+def build_ai_recommendation_prompt(area, season, language):
+    return f"""
+You are an expert agricultural advisor specialising in practical Indian farming recommendations.
+
+Task:
+- Suggest exactly 3 crop options for a farmer in \"{area}\" during the \"{season}\" season.
+- Prefer crops that are common, recognisable, and realistically grown in or around similar Indian conditions.
+- Make each reason short, practical, and specific to season, water, soil, or market suitability.
+- If a crop is only a moderate match, use \"Medium\" or \"Low\" confidence instead of overstating certainty.
+- Avoid repeating near-identical crop choices from the same family unless there is a strong practical reason.
+
+Language rule:
+- {get_recommendation_language_instruction(language)}
+
+Return ONLY a raw JSON array of exactly 3 objects.
+Each object must have these keys in this exact order:
+crop, reason, confidence, season_fit, water_need, soil_type
+
+Allowed values:
+- confidence: \"High\", \"Medium\", \"Low\"
+- season_fit: \"Perfect\", \"Good\", \"Poor\"
+- water_need: \"High\", \"Medium\", \"Low\"
+
+Output rules:
+- No markdown
+- No explanation outside the JSON array
+- No extra keys
+- Keep each reason within 1 to 2 short sentences
+""".strip()
+
+
+def build_ai_follow_up_prompt(area, season, crops, conversation, language):
+    if language == "hindi":
+        language_instruction = "Answer in Hindi."
+    elif language == "hinglish":
+        language_instruction = "Answer in Hinglish using Hindi words written in English letters."
+    else:
+        language_instruction = "Answer in simple English."
+
+    return f"""
+You are an expert agricultural advisor helping an Indian farmer with a follow-up question.
+
+Context:
+- Location: {area}
+- Season: {season}
+- Recommended crops already shown: {", ".join(crops)}
+
+Conversation so far:
+{conversation or "No prior conversation."}
+
+Instructions:
+- {language_instruction}
+- Stay grounded in the listed crops, the region, and the season.
+- Be practical and farmer-friendly.
+- If there is uncertainty, clearly say what the farmer should verify locally.
+- Prefer short bullet points when they improve clarity.
+- Keep the response under 120 words.
+- Do not return JSON.
+- Do not use markdown tables.
+""".strip()
+
+
+def build_follow_up_fallback_reply(area, crops, language):
+    crops_text = ", ".join(crops)
+
+    if language == "hindi":
+        return (
+            f"Live AI follow-up abhi temporary roop se unavailable hai. फिलहाल {area} ke liye {crops_text} ko "
+            "paani ki zarurat, mitti ki suitability, beej ki uplabdhata aur local mandi demand ke hisaab se compare karein. "
+            "Bowaai se pehle local agriculture officer ya trusted agri expert se confirm kar lein."
+        )
+
+    if language == "hinglish":
+        return (
+            f"Live AI follow-up abhi temporarily unavailable hai. Filhal {area} ke liye {crops_text} ko "
+            "water need, soil fit, seed availability aur local mandi demand ke hisaab se compare karein. "
+            "Bowaai se pehle local agriculture officer ya trusted agri expert se confirm kar lein."
+        )
+
+    return (
+        f"Live AI follow-up is temporarily unavailable. For now, compare {crops_text} for {area} using water need, "
+        "soil fit, seed availability, and nearby mandi demand. Before planting, confirm the final choice with a local "
+        "agriculture officer or a trusted agri expert."
+    )
 
 
 def crop_item(crop, reason, confidence, season_fit, water_need, soil_type):
@@ -244,13 +480,19 @@ def crop_item(crop, reason, confidence, season_fit, water_need, soil_type):
 
 
 def fallback_reason(crop, area, season, water_need, language):
-    water_hindi = {"High": "ज्यादा", "Medium": "मध्यम", "Low": "कम"}.get(water_need, water_need)
+    water_hindi = {"High": "zyada", "Medium": "madhyam", "Low": "kam"}.get(water_need, water_need)
     water_hinglish = {"High": "zyada", "Medium": "madhyam", "Low": "kam"}.get(water_need, water_need)
 
     if language == "hindi":
-        return f"{area} में {season} मौसम के लिए {crop} अच्छा विकल्प हो सकता है। इसकी पानी की जरूरत {water_hindi} है, इसलिए बोआई से पहले सिंचाई, मिट्टी और स्थानीय बाजार की जांच करें।"
+        return (
+            f"{area} mein {season} season ke liye {crop} ek upyogi vikalp ho sakta hai. "
+            f"Iski paani ki zarurat {water_hindi} hai, isliye bowaai se pehle sinchai, mitti aur local bazaar ko check karein."
+        )
     if language == "hinglish":
-        return f"{area} me {season} season ke liye {crop} practical option ho sakta hai. Iski water need {water_hinglish} hai, isliye irrigation, soil aur local market pehle check karein."
+        return (
+            f"{area} me {season} season ke liye {crop} practical option ho sakta hai. "
+            f"Iski water need {water_hinglish} hai, isliye irrigation, soil aur local market pehle check karein."
+        )
     return None
 
 
@@ -260,19 +502,19 @@ def fallback_ai_recommendations(area, season, language="english"):
 
     generic = {
         "kharif": [
-            crop_item("Rice", "Rule-based fallback: monsoon rainfall usually supports paddy where water is available.", "Medium", "Good", "High", "Clay loam"),
-            crop_item("Maize", "Rule-based fallback: maize is a practical Kharif option in well-drained fields.", "Medium", "Good", "Medium", "Loam"),
-            crop_item("Cotton", "Rule-based fallback: cotton can suit warm Kharif conditions where drainage is reliable.", "Low", "Good", "Medium", "Black soil or loam"),
+            crop_item("Rice", "Fallback guidance: monsoon rainfall usually supports paddy where water is available.", "Medium", "Good", "High", "Clay loam"),
+            crop_item("Maize", "Fallback guidance: maize is a practical Kharif option in well-drained fields.", "Medium", "Good", "Medium", "Loam"),
+            crop_item("Cotton", "Fallback guidance: cotton can suit warm Kharif conditions where drainage is reliable.", "Low", "Good", "Medium", "Black soil or loam"),
         ],
         "rabi": [
-            crop_item("Wheat", "Rule-based fallback: wheat is a common winter crop in many irrigated northern plains.", "Medium", "Good", "Medium", "Loam"),
-            crop_item("Chickpea", "Rule-based fallback: chickpea suits cooler Rabi weather and needs moderate irrigation.", "Medium", "Good", "Low", "Sandy loam"),
-            crop_item("Lentil", "Rule-based fallback: lentil is a low-water pulse option for Rabi fields.", "Medium", "Good", "Low", "Loam"),
+            crop_item("Wheat", "Fallback guidance: wheat is a common winter crop in many irrigated northern plains.", "Medium", "Good", "Medium", "Loam"),
+            crop_item("Chickpea", "Fallback guidance: chickpea suits cooler Rabi weather and needs moderate irrigation.", "Medium", "Good", "Low", "Sandy loam"),
+            crop_item("Lentil", "Fallback guidance: lentil is a low-water pulse option for Rabi fields.", "Medium", "Good", "Low", "Loam"),
         ],
         "zaid": [
-            crop_item("Mung Bean", "Rule-based fallback: short-duration mung bean can fit the summer gap between main seasons.", "Medium", "Good", "Low", "Sandy loam"),
-            crop_item("Watermelon", "Rule-based fallback: watermelon fits warm Zaid weather when irrigation is available.", "Medium", "Good", "Medium", "Sandy loam"),
-            crop_item("Muskmelon", "Rule-based fallback: muskmelon is suitable for hot, dry summer windows with managed watering.", "Medium", "Good", "Medium", "Sandy loam"),
+            crop_item("Mung Bean", "Fallback guidance: short-duration mung bean can fit the summer gap between main seasons.", "Medium", "Good", "Low", "Sandy loam"),
+            crop_item("Watermelon", "Fallback guidance: watermelon fits warm Zaid weather when irrigation is available.", "Medium", "Good", "Medium", "Sandy loam"),
+            crop_item("Muskmelon", "Fallback guidance: muskmelon is suitable for hot, dry summer windows with managed watering.", "Medium", "Good", "Medium", "Sandy loam"),
         ],
     }
 
@@ -280,42 +522,42 @@ def fallback_ai_recommendations(area, season, language="english"):
     if any(place in area_key for place in ["punjab", "meerut", "haryana", "western up"]):
         regional = {
             "kharif": [
-                crop_item("Rice", "Rule-based fallback for this region: irrigated Kharif fields often support paddy.", "High", "Good", "High", "Clay loam"),
-                crop_item("Maize", "Rule-based fallback for this region: maize is a strong alternative where water is limited.", "Medium", "Good", "Medium", "Loam"),
-                crop_item("Cotton", "Rule-based fallback for this region: cotton can work in warm, well-drained fields.", "Medium", "Good", "Medium", "Sandy loam"),
+                crop_item("Rice", "Fallback guidance for this region: irrigated Kharif fields often support paddy.", "High", "Good", "High", "Clay loam"),
+                crop_item("Maize", "Fallback guidance for this region: maize is a strong alternative where water is limited.", "Medium", "Good", "Medium", "Loam"),
+                crop_item("Cotton", "Fallback guidance for this region: cotton can work in warm, well-drained fields.", "Medium", "Good", "Medium", "Sandy loam"),
             ],
             "rabi": [
-                crop_item("Wheat", "Rule-based fallback for this region: wheat is the dominant Rabi choice with irrigation.", "High", "Perfect", "Medium", "Loam"),
-                crop_item("Mustard", "Rule-based fallback for this region: mustard suits cool, dry Rabi conditions.", "Medium", "Good", "Low", "Sandy loam"),
-                crop_item("Chickpea", "Rule-based fallback for this region: chickpea is useful where lower water use is preferred.", "Medium", "Good", "Low", "Sandy loam"),
+                crop_item("Wheat", "Fallback guidance for this region: wheat is the dominant Rabi choice with irrigation.", "High", "Perfect", "Medium", "Loam"),
+                crop_item("Mustard", "Fallback guidance for this region: mustard suits cool, dry Rabi conditions.", "Medium", "Good", "Low", "Sandy loam"),
+                crop_item("Chickpea", "Fallback guidance for this region: chickpea is useful where lower water use is preferred.", "Medium", "Good", "Low", "Sandy loam"),
             ],
             "zaid": generic["zaid"],
         }
     elif "assam" in area_key:
         regional = {
             "kharif": [
-                crop_item("Rice", "Rule-based fallback for Assam: humid monsoon conditions strongly support paddy.", "High", "Perfect", "High", "Clay loam"),
-                crop_item("Jute", "Rule-based fallback for Assam: jute suits warm, humid Kharif conditions.", "Medium", "Good", "High", "Alluvial loam"),
-                crop_item("Maize", "Rule-based fallback for Assam: maize can fit upland, well-drained fields.", "Medium", "Good", "Medium", "Loam"),
+                crop_item("Rice", "Fallback guidance for Assam: humid monsoon conditions strongly support paddy.", "High", "Perfect", "High", "Clay loam"),
+                crop_item("Jute", "Fallback guidance for Assam: jute suits warm, humid Kharif conditions.", "Medium", "Good", "High", "Alluvial loam"),
+                crop_item("Maize", "Fallback guidance for Assam: maize can fit upland, well-drained fields.", "Medium", "Good", "Medium", "Loam"),
             ],
             "rabi": [
-                crop_item("Mustard", "Rule-based fallback for Assam: mustard is a common cool-season oilseed option.", "Medium", "Good", "Low", "Loam"),
-                crop_item("Potato", "Rule-based fallback for Assam: potato can perform well in cool Rabi weather.", "Medium", "Good", "Medium", "Sandy loam"),
-                crop_item("Lentil", "Rule-based fallback for Assam: lentil is a practical pulse option after rice.", "Medium", "Good", "Low", "Loam"),
+                crop_item("Mustard", "Fallback guidance for Assam: mustard is a common cool-season oilseed option.", "Medium", "Good", "Low", "Loam"),
+                crop_item("Potato", "Fallback guidance for Assam: potato can perform well in cool Rabi weather.", "Medium", "Good", "Medium", "Sandy loam"),
+                crop_item("Lentil", "Fallback guidance for Assam: lentil is a practical pulse option after rice.", "Medium", "Good", "Low", "Loam"),
             ],
             "zaid": generic["zaid"],
         }
     elif "cauvery" in area_key or "delta" in area_key:
         regional = {
             "kharif": [
-                crop_item("Rice", "Rule-based fallback for the Cauvery Delta: canal and monsoon water often support paddy.", "High", "Perfect", "High", "Clay loam"),
-                crop_item("Blackgram", "Rule-based fallback for the Cauvery Delta: blackgram can fit after short-duration paddy.", "Medium", "Good", "Low", "Loam"),
-                crop_item("Maize", "Rule-based fallback for the Cauvery Delta: maize works where drainage and irrigation are managed.", "Medium", "Good", "Medium", "Loam"),
+                crop_item("Rice", "Fallback guidance for the Cauvery Delta: canal and monsoon water often support paddy.", "High", "Perfect", "High", "Clay loam"),
+                crop_item("Blackgram", "Fallback guidance for the Cauvery Delta: blackgram can fit after short-duration paddy.", "Medium", "Good", "Low", "Loam"),
+                crop_item("Maize", "Fallback guidance for the Cauvery Delta: maize works where drainage and irrigation are managed.", "Medium", "Good", "Medium", "Loam"),
             ],
             "rabi": [
-                crop_item("Rice", "Rule-based fallback for the Cauvery Delta: irrigated fields can support another paddy crop.", "Medium", "Good", "High", "Clay loam"),
-                crop_item("Blackgram", "Rule-based fallback for the Cauvery Delta: blackgram is a useful pulse in rice fallows.", "Medium", "Good", "Low", "Loam"),
-                crop_item("Groundnut", "Rule-based fallback for the Cauvery Delta: groundnut can suit lighter soils with drainage.", "Medium", "Good", "Medium", "Sandy loam"),
+                crop_item("Rice", "Fallback guidance for the Cauvery Delta: irrigated fields can support another paddy crop.", "Medium", "Good", "High", "Clay loam"),
+                crop_item("Blackgram", "Fallback guidance for the Cauvery Delta: blackgram is a useful pulse in rice fallows.", "Medium", "Good", "Low", "Loam"),
+                crop_item("Groundnut", "Fallback guidance for the Cauvery Delta: groundnut can suit lighter soils with drainage.", "Medium", "Good", "Medium", "Sandy loam"),
             ],
             "zaid": generic["zaid"],
         }
@@ -326,6 +568,9 @@ def fallback_ai_recommendations(area, season, language="english"):
             localized = fallback_reason(choice["crop"], area, season, choice["water_need"], language)
             if localized:
                 choice["reason"] = localized
+    else:
+        for choice in choices:
+            choice["reason"] = soften_fallback_reason_text(choice["reason"], language)
     return choices
 
 # =========================
@@ -334,35 +579,12 @@ def fallback_ai_recommendations(area, season, language="english"):
 def crop_prediction(input_data):
     ensure_crop_models_loaded()
     input_data = np.array(input_data, dtype=np.float64)
-
-    preds = [
-        crop_xgb_pipeline.predict(input_data)[0],
-        crop_rf_pipeline.predict(input_data)[0],
-        crop_knn_pipeline.predict(input_data)[0],
-    ]
-    probs = [
-        max(crop_xgb_pipeline.predict_proba(input_data)[0]),
-        max(crop_rf_pipeline.predict_proba(input_data)[0]),
-        max(crop_knn_pipeline.predict_proba(input_data)[0]),
-    ]
-    labels = [crop_label_dict[p] for p in preds]
-
-    count = Counter(labels)
-    most_common = count.most_common()
-    if most_common[0][1] == 1:
-        final = labels[probs.index(max(probs))]
-    else:
-        final = most_common[0][0]
-
-    return {
-        "xgb_model_prediction":  labels[0],
-        "rf_model_prediction":   labels[1],
-        "knn_model_prediction":  labels[2],
-        "xgb_model_probability": round(probs[0] * 100, 2),
-        "rf_model_probability":  round(probs[1] * 100, 2),
-        "knn_model_probability": round(probs[2] * 100, 2),
-        "final_prediction":      final,
-    }
+    return run_ensemble_prediction(
+        input_data,
+        [crop_xgb_pipeline, crop_rf_pipeline, crop_knn_pipeline],
+        crop_label_dict,
+        ["xgb", "rf", "knn"],
+    )
 
 # =========================
 # FERTILIZER PREDICTION
@@ -370,36 +592,12 @@ def crop_prediction(input_data):
 def fertilizer_prediction(input_data):
     ensure_fertilizer_models_loaded()
     input_data = np.array(input_data, dtype=np.float64)
-
-    preds = [
-        fertilizer_xgb_pipeline.predict(input_data)[0],
-        fertilizer_rf_pipeline.predict(input_data)[0],
-        fertilizer_svm_pipeline.predict(input_data)[0],
-    ]
-    probs = [
-        max(fertilizer_xgb_pipeline.predict_proba(input_data)[0]),
-        max(fertilizer_rf_pipeline.predict_proba(input_data)[0]),
-        max(fertilizer_svm_pipeline.predict_proba(input_data)[0]),
-    ]
-    labels = [fertilizer_label_dict[p] for p in preds]
-
-    count = Counter(labels)
-    most_common = count.most_common()
-    if most_common[0][1] == 1:
-        final = labels[probs.index(max(probs))]
-    else:
-        final = most_common[0][0]
-
-    # Return named per-model fields so the frontend can display a proper breakdown
-    return {
-        "xgb_model_prediction":  labels[0],
-        "rf_model_prediction":   labels[1],
-        "svm_model_prediction":  labels[2],
-        "xgb_model_probability": round(probs[0] * 100, 2),
-        "rf_model_probability":  round(probs[1] * 100, 2),
-        "svm_model_probability": round(probs[2] * 100, 2),
-        "final_prediction":      final,
-    }
+    return run_ensemble_prediction(
+        input_data,
+        [fertilizer_xgb_pipeline, fertilizer_rf_pipeline, fertilizer_svm_pipeline],
+        fertilizer_label_dict,
+        ["xgb", "rf", "svm"],
+    )
 
 # =========================
 # ROUTES
@@ -432,15 +630,13 @@ def api_root():
 @app.route("/predict_crop", methods=["POST"])
 def predict_crop():
     try:
-        data = request.get_json()
-        print("CROP INPUT:", data)
+        data = get_json_payload()
 
         fields = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
-        require_json_object(data)
         validate_required_fields(data, fields)
         validated = validate_numeric_ranges(data, {
             "N": (0, 140),
-            "P": (0, 140),
+            "P": (0, 145),
             "K": (0, 205),
             "temperature": (8, 44),
             "humidity": (14, 100),
@@ -454,21 +650,18 @@ def predict_crop():
         return jsonify(result)
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return error_response(str(e), 400)
+    except Exception:
+        app.logger.exception("Unhandled error in /predict_crop")
+        return server_error_response()
 
 
 # Fertilizer Prediction
 @app.route("/predict_fertilizer", methods=["POST"])
 def predict_fertilizer():
     try:
-        data = request.get_json()
-        print("FERTILIZER INPUT:", data)
-        require_json_object(data)
+        data = get_json_payload()
 
-        # Frontend sends pre-encoded Soil Type and Crop Type as integers
         required = [
             "Temperature", "Humidity", "Moisture",
             "Soil Type", "Crop Type",
@@ -488,56 +681,35 @@ def predict_fertilizer():
         input_list = [validated[f] for f in required]
         input_data = np.array(input_list, dtype=np.float64).reshape(1, -1)
 
-        print("INPUT ARRAY:", input_data)
-
         result = fertilizer_prediction(input_data)
         return jsonify(result)
 
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return error_response(str(e), 400)
+    except Exception:
+        app.logger.exception("Unhandled error in /predict_fertilizer")
+        return server_error_response()
 
 
-# AI Crop Recommendation (Gemini)
 @app.route("/ai-recommend", methods=["POST"])
 def ai_recommend():
     try:
-        data = request.get_json()
+        data = get_json_payload()
 
-        area   = data.get("area")
-        season = data.get("season")
-        language = data.get("language", "english")
+        area = str(data.get("area") or "").strip()
+        season = str(data.get("season") or "").strip()
+        language = normalize_language(data.get("language", "english"))
 
         if not area or not season:
-            return jsonify({"error": "Missing 'area' or 'season'"}), 400
+            return error_response("Missing 'area' or 'season'", 400)
 
-        reason_language = "Write reason values in simple English."
-        if language == "hindi":
-            reason_language = "Write reason values in Hindi. Keep crop names, JSON keys, confidence, season_fit, water_need, and soil_type values in English."
-        elif language == "hinglish":
-            reason_language = "Write reason values in Hinglish, using Hindi words written in English letters. Keep crop names, JSON keys, confidence, season_fit, water_need, and soil_type values in English."
-
-        prompt = f"""
-You are an expert agricultural advisor specialising in Indian farming.
-
-A farmer in "{area}" wants to know which crops to grow during the "{season}" season.
-
-{reason_language}
-
-Return ONLY a raw JSON array of exactly 3 objects with these keys:
-crop, reason, confidence, season_fit, water_need, soil_type
-
-confidence values: "High", "Medium", or "Low"
-season_fit values: "Perfect", "Good", or "Poor"
-water_need values: "High", "Medium", or "Low"
-"""
+        prompt = build_ai_recommendation_prompt(area, season, language)
 
         raw, error = call_gemini(prompt, temperature=0.3)
         if error:
             message, status_code = error
             if should_use_ai_fallback(status_code):
+                fallback_items = fallback_ai_recommendations(area, season, language)
                 app.logger.warning(
                     "Falling back for /ai-recommend: status=%s area=%s season=%s language=%s message=%s",
                     status_code,
@@ -546,63 +718,58 @@ water_need values: "High", "Medium", or "Low"
                     language,
                     message,
                 )
-                return jsonify(fallback_ai_recommendations(area, season, language))
-            return jsonify({"error": message}), status_code
+                return advisory_response(
+                    fallback_items,
+                    mode="fallback",
+                    source="local-fallback",
+                    warning=message,
+                )
+            return error_response(message, status_code)
 
         parsed = parse_gemini_json_array(raw)
+        normalized_items = [normalize_advisory_item(item, "gemini") for item in parsed[:3]]
+        if not normalized_items:
+            raise ValueError("Gemini did not return any crop recommendations.")
 
-        return jsonify(parsed)
+        return advisory_response(normalized_items, mode="live", source="gemini")
 
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception:
+        app.logger.exception("Unhandled error in /ai-recommend")
+        return server_error_response()
 
 
 @app.route("/ai-follow-up", methods=["POST"])
 def ai_follow_up():
     try:
-        data = request.get_json()
+        data = get_json_payload()
         context = data.get("context") or {}
         history = data.get("history") or []
-        language = data.get("language", "english")
+        language = normalize_language(data.get("language", "english"))
 
-        area = context.get("area")
-        season = context.get("season")
+        if not isinstance(context, dict):
+            raise ValueError("'context' must be a JSON object.")
+        if not isinstance(history, list):
+            raise ValueError("'history' must be an array.")
+
+        area = str(context.get("area") or "").strip()
+        season = str(context.get("season") or "").strip()
         crops = context.get("crops") or []
 
+        if not isinstance(crops, list):
+            raise ValueError("'context.crops' must be an array.")
+        crops = [str(crop).strip() for crop in crops if str(crop).strip()]
+
         if not area or not season or not crops:
-            return jsonify({"error": "Missing AI crop context."}), 400
+            return error_response("Missing AI crop context.", 400)
 
         conversation = "\n".join(
             f"{'Farmer' if msg.get('role') == 'user' else 'Assistant'}: {msg.get('content', '')}"
             for msg in history
         )
 
-        lang_instruction = "Answer in simple English."
-        if language == "hindi":
-            lang_instruction = "Answer in Hindi."
-        elif language == "hinglish":
-            lang_instruction = "Answer in Hinglish (Hindi written in English letters)."
-
-        prompt = f"""
-You are an expert agricultural advisor.
-
-Context:
-- Location: {area}
-- Season: {season}
-- Crops: {", ".join(crops)}
-
-Conversation:
-{conversation}
-
-{lang_instruction}
-
-Rules:
-- Be practical and farmer-friendly
-- Use bullet points if useful
-- Keep response under 150 words
-- Do NOT return JSON
-"""
+        prompt = build_ai_follow_up_prompt(area, season, crops, conversation, language)
 
         reply, error = call_gemini(prompt, temperature=0.6)
         if error:
@@ -617,37 +784,67 @@ Rules:
                     ", ".join(crops),
                     message,
                 )
-                crops_text = ", ".join(crops)
-                if language == "hindi":
-                    return jsonify({
-                        "reply": (
-                            f"Gemini quota अभी temporarily busy है। {area} के लिए {crops_text} को पानी की जरूरत, "
-                            "मिट्टी की suitability, seed availability और mandi demand के हिसाब से compare करें। "
-                            "Final decision से पहले local agriculture officer से confirm कर लें।"
-                        )
-                    })
-                if language == "hinglish":
-                    return jsonify({
-                        "reply": (
-                            f"Gemini quota abhi temporarily busy hai. {area} ke liye {crops_text} ko irrigation need, "
-                            "soil fit, seed availability aur mandi demand ke hisaab se compare karein. Final decision "
-                            "se pehle local agriculture officer se confirm kar lein."
-                        )
-                    })
-                return jsonify({
-                    "reply": (
-                        f"Live AI follow-up is temporarily unavailable because the Gemini quota is busy. For {area}, "
-                        f"compare {crops_text} by irrigation need, soil fit, seed availability, and nearby mandi demand. "
-                        "Before planting, confirm the final choice with a local agriculture extension officer."
-                    )
-                })
-            return jsonify({"error": message}), status_code
+                return follow_up_response(
+                    build_follow_up_fallback_reply(area, crops, language),
+                    mode="fallback",
+                    source="local-fallback",
+                    warning=message,
+                )
+            return error_response(message, status_code)
 
-        return jsonify({"reply": reply})
+        return follow_up_response(str(reply).strip(), mode="live", source="gemini")
 
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    except ValueError as e:
+        return error_response(str(e), 400)
+    except Exception:
+        app.logger.exception("Unhandled error in /ai-follow-up")
+        return server_error_response()
+
+
+@app.route("/weather", methods=["GET"])
+def weather_lookup():
+    city = str(request.args.get("city") or "").strip()
+    if not city:
+        return error_response("Missing 'city' query parameter.", 400)
+
+    api_key = os.getenv("OPENWEATHER_API_KEY")
+    if not api_key:
+        return error_response("Weather service is not configured on the backend.", 503)
+
+    try:
+        response = requests.get(
+            "https://api.openweathermap.org/data/2.5/weather",
+            params={"q": city, "units": "metric", "appid": api_key},
+            timeout=10,
+        )
+        result = response.json()
+    except requests.RequestException:
+        app.logger.exception("OpenWeather request failed for city=%s", city)
+        return error_response("Weather service is temporarily unavailable.", 502)
+    except ValueError:
+        app.logger.exception("OpenWeather returned a non-JSON response for city=%s", city)
+        return error_response("Weather service returned an invalid response.", 502)
+
+    if response.status_code == 404 or str(result.get("cod")) == "404":
+        return error_response("City not found.", 404)
+
+    if not response.ok:
+        app.logger.warning(
+            "OpenWeather lookup failed: status=%s city=%s message=%s",
+            response.status_code,
+            city,
+            result.get("message"),
+        )
+        return error_response("Failed to fetch weather data.", 502)
+
+    return jsonify(
+        {
+            "temperature": result.get("main", {}).get("temp"),
+            "humidity": result.get("main", {}).get("humidity"),
+            "rainfall": (result.get("rain") or {}).get("1h", 0),
+            "source": "openweather",
+        }
+    )
 
 
 # =========================

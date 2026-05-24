@@ -1,111 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
-import api from "../api/recommenderapi";
 import { getAICropRecommendation } from "../api/aiRecommender";
+import { predictCrop } from "../api/predictions";
 import { getWeatherData } from "../api/weather";
 import { cropData } from "./Data";
+import {
+  ADVISOR_LANGUAGES,
+  CROP_IDEAL_RANGES,
+  CROP_IMAGE_MAP,
+  DISPLAY_CROP_CALENDAR,
+  DISPLAY_FIELDS,
+  DISPLAY_SEASONS,
+  FIELDS,
+  INITIAL_FORM,
+  MONTHS,
+  weightedVote,
+} from "../config/cropRecommenderConfig";
 import { clearFarmerProfile, getFarmerProfile, saveFarmerProfile } from "../utils/farmerProfile";
+import { normalizeLocalizedCopy } from "../utils/localization";
 import { savePredictionHistory } from "../utils/predictionHistory";
 import { useLanguage } from "../context/LanguageContext";
 import "../styles/croprecommenderoutput.css";
-
-import apple        from "../images/crop/apple.jpg";
-import banana       from "../images/crop/banana.jpg";
-import blackgram    from "../images/crop/blackgram.jpg";
-import chickpea     from "../images/crop/chickpea.jpg";
-import coconut      from "../images/crop/coconut.jpg";
-import coffee       from "../images/crop/coffee.png";
-import cotton       from "../images/crop/cotton.png";
-import grape        from "../images/crop/grape.png";
-import jute         from "../images/crop/jute.jpg";
-import kidneybeans  from "../images/crop/kidneybeans.jpg";
-import lentil       from "../images/crop/lentil.jpg";
-import maize        from "../images/crop/maize.jpg";
-import mango        from "../images/crop/mango.jpg";
-import mothbean     from "../images/crop/mothbean.jpg";
-import mungbean     from "../images/crop/mungbean.jpg";
-import muskmelon    from "../images/crop/muskmelon.jpg";
-import orange       from "../images/crop/orange.jpg";
-import papaya       from "../images/crop/papaya.jpg";
-import pigeonpeas   from "../images/crop/pigeonpeas.jpg";
-import pomegranate  from "../images/crop/pomegranate.jpg";
-import rice         from "../images/crop/rice.jpg";
-import watermelon   from "../images/crop/watermelon.jpg";
-
-// ─── Field config ─────────────────────────────────────────────────────────────
-const FIELDS = [
-  { id: "N",           label: "Nitrogen",     hint: "0 – 140",     unit: "ratio", icon: "N",  min: 0,  max: 140, step: 1,   explainer: "Nitrogen fuels leafy growth & chlorophyll. Low N = yellow leaves, stunted plants." },
-  { id: "P",           label: "Phosphorous",  hint: "0 – 140",     unit: "ratio", icon: "P",  min: 0,  max: 140, step: 1,   explainer: "Phosphorous drives root development & fruiting. Critical during early growth stages." },
-  { id: "K",           label: "Potassium",    hint: "0 – 205",     unit: "ratio", icon: "K",  min: 0,  max: 205, step: 1,   explainer: "Potassium regulates water uptake & disease resistance. Essential for strong stems." },
-  { id: "temperature", label: "Temperature",  hint: "8 – 44 °C",   unit: "°C",   icon: "T",  min: 8,  max: 44,  step: 0.1, explainer: "Average daytime temperature. Most crops grow best between 15–30°C." },
-  { id: "humidity",    label: "Humidity",     hint: "14 – 100 %",  unit: "%",    icon: "H",  min: 14, max: 100, step: 0.1, explainer: "Relative air humidity. High humidity favours fungi; low humidity causes wilting." },
-  { id: "ph",          label: "Soil pH",      hint: "0 – 14",      unit: "pH",   icon: "pH", min: 0,  max: 14,  step: 0.1, explainer: "pH 6–7.5 suits most crops. Acidic soil locks out nutrients; alkaline soil hinders iron uptake." },
-  { id: "rainfall",    label: "Rainfall",     hint: "20 – 300 mm", unit: "mm",   icon: "R",  min: 20, max: 300, step: 0.1, explainer: "Annual or seasonal rainfall. Determines irrigation need and crop water budget." },
-];
-
-const INITIAL_FORM = {
-  ...FIELDS.reduce((acc, f) => ({ ...acc, [f.id]: "" }), {}),
-  season: "",
-  region: "",
-};
-
-// ─── Static data ──────────────────────────────────────────────────────────────
-const CROP_IDEAL_RANGES = {
-  rice:       { N:[80,120], P:[40,60],  K:[40,60],  temperature:[22,28], humidity:[80,95],  ph:[5.5,7],   rainfall:[150,300] },
-  maize:      { N:[80,110], P:[40,70],  K:[35,55],  temperature:[18,27], humidity:[55,80],  ph:[5.8,7.5], rainfall:[60,110]  },
-  wheat:      { N:[60,120], P:[30,60],  K:[30,50],  temperature:[12,25], humidity:[50,70],  ph:[6,7.5],   rainfall:[50,100]  },
-  cotton:     { N:[80,120], P:[40,70],  K:[40,70],  temperature:[21,37], humidity:[50,70],  ph:[5.8,8],   rainfall:[50,100]  },
-  mango:      { N:[40,80],  P:[20,40],  K:[40,60],  temperature:[24,30], humidity:[50,60],  ph:[5.5,7.5], rainfall:[75,125]  },
-  banana:     { N:[100,140],P:[50,80],  K:[100,150],temperature:[26,30], humidity:[75,85],  ph:[5.5,6.5], rainfall:[100,200] },
-  apple:      { N:[20,60],  P:[10,30],  K:[20,60],  temperature:[5,20],  humidity:[70,90],  ph:[5.5,6.5], rainfall:[100,125] },
-  chickpea:   { N:[20,40],  P:[40,60],  K:[20,40],  temperature:[15,25], humidity:[40,60],  ph:[6,7.5],   rainfall:[40,75]   },
-  lentil:     { N:[20,40],  P:[30,50],  K:[15,30],  temperature:[15,25], humidity:[40,60],  ph:[6,7],     rainfall:[30,60]   },
-  watermelon: { N:[50,80],  P:[30,50],  K:[50,80],  temperature:[25,35], humidity:[50,70],  ph:[6,7],     rainfall:[40,80]   },
-};
-
-const CROP_CALENDAR = {
-  rice:       { sow:[5,6],  grow:[6,9],  harvest:[9,10],  label:"Jun–Oct"   },
-  maize:      { sow:[5,6],  grow:[6,8],  harvest:[8,9],   label:"Jun–Sep"   },
-  wheat:      { sow:[10,11],grow:[11,2], harvest:[3,4],   label:"Nov–Apr"   },
-  cotton:     { sow:[4,5],  grow:[5,9],  harvest:[9,11],  label:"May–Nov"   },
-  mango:      { sow:[6,7],  grow:[7,11], harvest:[3,5],   label:"Mar–May"   },
-  banana:     { sow:[5,7],  grow:[7,4],  harvest:[4,5],   label:"Year-round"},
-  apple:      { sow:[1,2],  grow:[2,9],  harvest:[9,10],  label:"Sep–Oct"   },
-  chickpea:   { sow:[10,11],grow:[11,2], harvest:[2,3],   label:"Feb–Mar"   },
-  lentil:     { sow:[10,11],grow:[11,2], harvest:[3,4],   label:"Mar–Apr"   },
-  watermelon: { sow:[2,3],  grow:[3,5],  harvest:[5,6],   label:"May–Jun"   },
-  muskmelon:  { sow:[2,3],  grow:[3,5],  harvest:[5,6],   label:"May–Jun"   },
-};
-
-const SEASONS = [
-  { value:"Kharif", label:"Kharif", desc:"Jun – Oct · Monsoon", icon:"🌧" },
-  { value:"Rabi",   label:"Rabi",   desc:"Nov – Apr · Winter",  icon:"❄"  },
-  { value:"Zaid",   label:"Zaid",   desc:"Mar – Jun · Summer",  icon:"☀"  },
-];
-
-const ADVISOR_LANGUAGES = [
-  { value:"english", label:"English", hint:"Simple" },
-  { value:"hindi", label:"हिन्दी", hint:"Hindi" },
-  { value:"hinglish", label:"हिंग्लिश", hint:"Hindi + English" },
-];
-
-const CROP_IMAGE_MAP = {
-  apple, banana, blackgram, chickpea, coconut, coffee, cotton, grape,
-  jute, kidneybeans, lentil, maize, mango, mothbean, mungbean,
-  muskmelon, orange, papaya, pigeonpeas, pomegranate, rice, watermelon,
-};
-
-const MODEL_WEIGHTS = { xgb:0.4, rf:0.35, knn:0.25 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function weightedVote(xgbLabel, rfLabel, knnLabel, xgbConf, rfConf, knnConf) {
-  const scores = {};
-  const add = (label, w, conf) => { scores[label] = (scores[label]||0) + w * Math.min(100, Math.max(0, conf)); };
-  add(xgbLabel, MODEL_WEIGHTS.xgb, xgbConf);
-  add(rfLabel,  MODEL_WEIGHTS.rf,  rfConf);
-  add(knnLabel, MODEL_WEIGHTS.knn, knnConf);
-  return Object.keys(scores).reduce((a, b) => scores[a] > scores[b] ? a : b);
-}
 
 function renderMessageContent(text) {
   const content = String(text || "");
@@ -142,7 +57,7 @@ function renderMessageContent(text) {
   });
 }
 
-// ─── #1 Live soil health score ────────────────────────────────────────────────
+// â”€â”€â”€ #1 Live soil health score â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function computeSoilHealthScore(formData) {
   const { N, P, K, ph } = formData;
   if (!N && !P && !K && !ph) return null;
@@ -160,7 +75,7 @@ function computeSoilHealthScore(formData) {
 
 function SoilHealthGauge({ score }) {
   const { language } = useLanguage();
-  const ui = getCropUi(language);
+  const ui = normalizeLocalizedCopy(getCropUi(language));
   if (score === null) return null;
   const color = score >= 75 ? '#c8f55a' : score >= 50 ? '#f5c842' : '#f55a5a';
   const label = score >= 75 ? ui.soilGood : score >= 50 ? ui.soilFair : ui.soilPoor;
@@ -186,13 +101,11 @@ function SoilHealthGauge({ score }) {
   );
 }
 
-// ─── #2 Crop calendar strip ───────────────────────────────────────────────────
-const MONTHS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
-
+// â”€â”€â”€ #2 Crop calendar strip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CropCalendar({ cropKey }) {
   const { language } = useLanguage();
-  const ui = getCropUi(language);
-  const cal = CROP_CALENDAR[cropKey?.toLowerCase()];
+  const ui = normalizeLocalizedCopy(getCropUi(language));
+  const cal = DISPLAY_CROP_CALENDAR[cropKey?.toLowerCase()];
   if (!cal) return null;
   return (
     <div className="cr-calendar">
@@ -224,10 +137,10 @@ function CropCalendar({ cropKey }) {
   );
 }
 
-// ─── #3 Radar chart ───────────────────────────────────────────────────────────
+// â”€â”€â”€ #3 Radar chart â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function RadarChart({ formData, cropKey }) {
   const { language } = useLanguage();
-  const ui = getCropUi(language);
+  const ui = normalizeLocalizedCopy(getCropUi(language));
   const ideal = CROP_IDEAL_RANGES[cropKey?.toLowerCase()];
   if (!ideal) return null;
   const axes = [
@@ -264,17 +177,17 @@ function RadarChart({ formData, cropKey }) {
         {axes.map((a,i)=>{ const p=toXY(i,1.18,r); return <text key={i} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle" fontSize="8.5" fill="rgba(255,255,255,0.5)" fontFamily="DM Mono,monospace">{a.label}</text>; })}
       </svg>
       <div className="cr-radar__legend">
-        <span className="cr-radar__legend-item" style={{ color:'#c8f55a' }}>— {ui.yourInputs}</span>
-        <span className="cr-radar__legend-item" style={{ color:'#5af5c8' }}>· · {ui.idealRange}</span>
+        <span className="cr-radar__legend-item" style={{ color:'#c8f55a' }}>â€” {ui.yourInputs}</span>
+        <span className="cr-radar__legend-item" style={{ color:'#5af5c8' }}>Â· Â· {ui.idealRange}</span>
       </div>
     </div>
   );
 }
 
-// ─── #4 Vote triangle ─────────────────────────────────────────────────────────
+// â”€â”€â”€ #4 Vote triangle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function VoteTriangle({ xgbLabel, rfLabel, knnLabel, xgbConf, rfConf, knnConf, winner }) {
   const { language } = useLanguage();
-  const ui = getCropUi(language);
+  const ui = normalizeLocalizedCopy(getCropUi(language));
   const total = xgbConf + rfConf + knnConf || 1;
   const W = 200, H = 176;
   const verts = [[W / 2, 18], [22, H - 28], [W - 22, H - 28]];
@@ -311,7 +224,7 @@ function VoteTriangle({ xgbLabel, rfLabel, knnLabel, xgbConf, rfConf, knnConf, w
   );
 }
 
-// ─── #5 & #6 Slider field with zone track + explainer ────────────────────────
+// â”€â”€â”€ #5 & #6 Slider field with zone track + explainer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SliderField({
   id, label, hint, unit, icon, min, max, step, value, onChange, onBlur, error, explainer,
   isExplainerOpen, onToggleExplainer
@@ -392,7 +305,7 @@ function SliderField({
             value={value}
             onChange={e => onChange(id, e.target.value)}
             min={min} max={max} step={step}
-            placeholder="—"
+            placeholder="â€”"
             className="cr-field__number"
             aria-label={`${label} value`}
             aria-invalid={Boolean(error)}
@@ -406,10 +319,10 @@ function SliderField({
   );
 }
 
-// ─── #7 Soil test import ──────────────────────────────────────────────────────
+// â”€â”€â”€ #7 Soil test import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function SoilTestImport({ onImport }) {
   const { language } = useLanguage();
-  const ui = getCropUi(language);
+  const ui = normalizeLocalizedCopy(getCropUi(language));
   const [open,   setOpen]   = useState(false);
   const [text,   setText]   = useState('');
   const [parsed, setParsed] = useState(null);
@@ -434,7 +347,7 @@ function SoilTestImport({ onImport }) {
   return (
     <div className="cr-import">
       <button className="cr-import__trigger" onClick={() => setOpen(o=>!o)} aria-expanded={open}>
-        <span>📋</span> {ui.pasteLabReport}
+        <span>ðŸ“‹</span> {ui.pasteLabReport}
       </button>
       {open && (
         <div className="cr-import__panel">
@@ -458,7 +371,7 @@ function SoilTestImport({ onImport }) {
                       {ui.importFound}: {Object.entries(parsed).map(([k,v]) => `${k.toUpperCase()}=${v}`).join(', ')}
                     </span>
                     <button className="cr-import__apply-btn" onClick={() => { onImport(parsed); setOpen(false); setText(''); setParsed(null); }}>
-                      {ui.importApply} →
+                      {ui.importApply} â†’
                     </button>
                   </>
                 ) : (
@@ -473,7 +386,7 @@ function SoilTestImport({ onImport }) {
   );
 }
 
-// ─── #9 Share button ──────────────────────────────────────────────────────────
+// â”€â”€â”€ #9 Share button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function shareResult(title, text) {
   if (navigator.share) {
     try { await navigator.share({ title, text }); } catch {}
@@ -538,7 +451,7 @@ function getTopCropSuggestions(modelResults) {
 function getCropReasonHighlights(formData, cropKey, language = "english") {
   const ideal = CROP_IDEAL_RANGES[cropKey?.toLowerCase()];
   if (!ideal) return [];
-  const fieldMeta = getLocalizedFieldMeta(language);
+  const fieldMeta = normalizeLocalizedCopy(getLocalizedFieldMeta(language));
   const english = language === "english";
   const hinglish = language === "hinglish";
 
@@ -567,21 +480,21 @@ function getCropReasonHighlights(formData, cropKey, language = "english") {
     })
     .slice(0, 3);
 
-  return matched.map((item) => {
+  return normalizeLocalizedCopy(matched.map((item) => {
     if (item.within) {
       if (english) return `${item.label} is within the preferred range (${item.min}-${item.max})`;
       if (hinglish) return `${item.label} preferred range (${item.min}-${item.max}) ke andar hai`;
-      return `${item.label} पसंदीदा सीमा (${item.min}-${item.max}) के भीतर है`;
+      return `${item.label} à¤ªà¤¸à¤‚à¤¦à¥€à¤¦à¤¾ à¤¸à¥€à¤®à¤¾ (${item.min}-${item.max}) à¤•à¥‡ à¤­à¥€à¤¤à¤° à¤¹à¥ˆ`;
     }
 
     if (english) return `${item.label} is the closest available match for this crop profile`;
     if (hinglish) return `${item.label} is crop profile ke sabse kareeb match karta hai`;
-    return `${item.label} इस फसल प्रोफ़ाइल के सबसे करीब मेल खाता है`;
-  });
+    return `${item.label} à¤‡à¤¸ à¤«à¤¸à¤² à¤ªà¥à¤°à¥‹à¤«à¤¼à¤¾à¤‡à¤² à¤•à¥‡ à¤¸à¤¬à¤¸à¥‡ à¤•à¤°à¥€à¤¬ à¤®à¥‡à¤² à¤–à¤¾à¤¤à¤¾ à¤¹à¥ˆ`;
+  }));
 }
 
 function getSeasonWindowLabel(season, language = "english") {
-  const match = getLocalizedSeasons(language).find((item) => item.value === season);
+  const match = normalizeLocalizedCopy(getLocalizedSeasons(language)).find((item) => item.value === season);
   return match ? match.desc : "";
 }
 
@@ -597,50 +510,50 @@ function mapProfileLanguageToAdvisor(language) {
 function getAdvisorUi(language) {
   if (language === "hindi") {
     return {
-      introTitle: "AI फसल सलाहकार",
-      introSub: "Gemini आधारित | आपके क्षेत्र और मौसम के अनुसार सुझाव",
-      responseLanguage: "जवाब की भाषा",
-      responseLanguageAria: "सलाहकार की जवाब भाषा",
-      locationLabel: "आपका क्षेत्र / जिला",
-      locationPlaceholder: "जैसे पंजाब, विदर्भ, कावेरी डेल्टा...",
-      locationAria: "आपका क्षेत्र या जिला",
-      locationHint: "जितना संभव हो उतना स्पष्ट लिखें। राज्य से बेहतर जिला-स्तर का नाम काम करता है।",
-      seasonLabel: "फसल का मौसम",
-      submitLabel: "AI सुझाव प्राप्त करें",
-      invalidHint: "आगे बढ़ने के लिए क्षेत्र लिखें और मौसम चुनें",
-      loadingText: (area, season) => <>AI सलाहकार <strong>{area}</strong> | <strong>{season}</strong> के लिए सुझाव तैयार कर रहा है...</>,
-      loadingSub: "क्षेत्रीय पैटर्न, मौसम और कृषि उपयुक्तता का विश्लेषण किया जा रहा है",
-      resultsLabel: (season) => `AI सलाहकार | ${season} मौसम`,
-      resultsTitle: (area) => <> <em>{area}</em> के लिए उपयुक्त फसलें </>,
-      backToForm: "फ़ॉर्म पर वापस जाएँ",
-      liveMode: "लाइव AI सलाह",
-      offlineMode: "स्थानीय सलाह बैकअप",
-      languageMeta: "हिन्दी",
-      seasonMeta: (season) => `${season} मौसम`,
-      optionsMeta: (count) => `${count} फसल विकल्प`,
-      fallbackDisclaimer: "अभी लाइव Gemini उपलब्ध नहीं है, इसलिए ये सुझाव स्थानीय सलाह बैकअप से आए हैं। अंतिम निर्णय से पहले पास के कृषि विशेषज्ञ से पुष्टि करें।",
-      liveDisclaimer: "AI द्वारा तैयार सुझाव। अंतिम निर्णय से पहले स्थानीय कृषि विशेषज्ञ से पुष्टि करें।",
-      retryLiveAi: "लाइव AI फिर आज़माएँ",
-      followUpTitle: "आगे सवाल पूछें",
-      followUpPlaceholder: "इस फसल के बारे में कुछ भी पूछें...",
-      followUpSend: "भेजें",
-      followUpThinking: "सोच रहा है...",
-      followUpError: "अभी जवाब नहीं मिल पाया। कृपया फिर से कोशिश करें।",
-      voiceUnsupported: "इस ब्राउज़र में वॉइस इनपुट उपलब्ध नहीं है। Chrome या Edge आज़माएँ, या जगह का नाम टाइप करें।",
-      voiceStopped: "वॉइस इनपुट रोक दिया गया।",
-      voiceBlocked: "माइक्रोफ़ोन अनुमति बंद है। localhost के लिए माइक अनुमति दें, फिर दोबारा कोशिश करें।",
-      voiceListening: "सुन रहा हूँ... अपना जिला या राज्य का नाम बोलें।",
-      voiceHeard: (transcript) => `"${transcript}" सुना गया। आगे बढ़ने के लिए मौसम चुनें।`,
-      voiceNoMatch: "बोली गई बात समझ में नहीं आई। फिर से कोशिश करें या जगह टाइप करें।",
-      voiceStartFailed: "वॉइस इनपुट शुरू नहीं हो सका। कृपया जगह का नाम टाइप करें।",
-      voiceButtonIdle: "बोलें",
-      voiceButtonActive: "रोकें",
-      voiceIdleAria: "जिले का नाम बोलें",
-      voiceActiveAria: "सुनना बंद करें",
-      cardWater: "पानी",
-      cardReason: "यह क्यों उपयुक्त है",
-      cardSoil: "उपयुक्त मिट्टी",
-      genericAiError: "AI सुझाव नहीं मिल सके। कृपया फिर से कोशिश करें।",
+      introTitle: "AI à¤«à¤¸à¤² à¤¸à¤²à¤¾à¤¹à¤•à¤¾à¤°",
+      introSub: "Gemini à¤†à¤§à¤¾à¤°à¤¿à¤¤ | à¤†à¤ªà¤•à¥‡ à¤•à¥à¤·à¥‡à¤¤à¥à¤° à¤”à¤° à¤®à¥Œà¤¸à¤® à¤•à¥‡ à¤…à¤¨à¥à¤¸à¤¾à¤° à¤¸à¥à¤à¤¾à¤µ",
+      responseLanguage: "à¤œà¤µà¤¾à¤¬ à¤•à¥€ à¤­à¤¾à¤·à¤¾",
+      responseLanguageAria: "à¤¸à¤²à¤¾à¤¹à¤•à¤¾à¤° à¤•à¥€ à¤œà¤µà¤¾à¤¬ à¤­à¤¾à¤·à¤¾",
+      locationLabel: "à¤†à¤ªà¤•à¤¾ à¤•à¥à¤·à¥‡à¤¤à¥à¤° / à¤œà¤¿à¤²à¤¾",
+      locationPlaceholder: "à¤œà¥ˆà¤¸à¥‡ à¤ªà¤‚à¤œà¤¾à¤¬, à¤µà¤¿à¤¦à¤°à¥à¤­, à¤•à¤¾à¤µà¥‡à¤°à¥€ à¤¡à¥‡à¤²à¥à¤Ÿà¤¾...",
+      locationAria: "à¤†à¤ªà¤•à¤¾ à¤•à¥à¤·à¥‡à¤¤à¥à¤° à¤¯à¤¾ à¤œà¤¿à¤²à¤¾",
+      locationHint: "à¤œà¤¿à¤¤à¤¨à¤¾ à¤¸à¤‚à¤­à¤µ à¤¹à¥‹ à¤‰à¤¤à¤¨à¤¾ à¤¸à¥à¤ªà¤·à¥à¤Ÿ à¤²à¤¿à¤–à¥‡à¤‚à¥¤ à¤°à¤¾à¤œà¥à¤¯ à¤¸à¥‡ à¤¬à¥‡à¤¹à¤¤à¤° à¤œà¤¿à¤²à¤¾-à¤¸à¥à¤¤à¤° à¤•à¤¾ à¤¨à¤¾à¤® à¤•à¤¾à¤® à¤•à¤°à¤¤à¤¾ à¤¹à¥ˆà¥¤",
+      seasonLabel: "à¤«à¤¸à¤² à¤•à¤¾ à¤®à¥Œà¤¸à¤®",
+      submitLabel: "AI à¤¸à¥à¤à¤¾à¤µ à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤•à¤°à¥‡à¤‚",
+      invalidHint: "à¤†à¤—à¥‡ à¤¬à¤¢à¤¼à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤•à¥à¤·à¥‡à¤¤à¥à¤° à¤²à¤¿à¤–à¥‡à¤‚ à¤”à¤° à¤®à¥Œà¤¸à¤® à¤šà¥à¤¨à¥‡à¤‚",
+      loadingText: (area, season) => <>AI à¤¸à¤²à¤¾à¤¹à¤•à¤¾à¤° <strong>{area}</strong> | <strong>{season}</strong> à¤•à¥‡ à¤²à¤¿à¤ à¤¸à¥à¤à¤¾à¤µ à¤¤à¥ˆà¤¯à¤¾à¤° à¤•à¤° à¤°à¤¹à¤¾ à¤¹à¥ˆ...</>,
+      loadingSub: "à¤•à¥à¤·à¥‡à¤¤à¥à¤°à¥€à¤¯ à¤ªà¥ˆà¤Ÿà¤°à¥à¤¨, à¤®à¥Œà¤¸à¤® à¤”à¤° à¤•à¥ƒà¤·à¤¿ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤à¤¤à¤¾ à¤•à¤¾ à¤µà¤¿à¤¶à¥à¤²à¥‡à¤·à¤£ à¤•à¤¿à¤¯à¤¾ à¤œà¤¾ à¤°à¤¹à¤¾ à¤¹à¥ˆ",
+      resultsLabel: (season) => `AI à¤¸à¤²à¤¾à¤¹à¤•à¤¾à¤° | ${season} à¤®à¥Œà¤¸à¤®`,
+      resultsTitle: (area) => <> <em>{area}</em> à¤•à¥‡ à¤²à¤¿à¤ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤ à¤«à¤¸à¤²à¥‡à¤‚ </>,
+      backToForm: "à¤«à¤¼à¥‰à¤°à¥à¤® à¤ªà¤° à¤µà¤¾à¤ªà¤¸ à¤œà¤¾à¤à¤",
+      liveMode: "à¤²à¤¾à¤‡à¤µ AI à¤¸à¤²à¤¾à¤¹",
+      offlineMode: "à¤¸à¥à¤¥à¤¾à¤¨à¥€à¤¯ à¤¸à¤²à¤¾à¤¹ à¤¬à¥ˆà¤•à¤…à¤ª",
+      languageMeta: "à¤¹à¤¿à¤¨à¥à¤¦à¥€",
+      seasonMeta: (season) => `${season} à¤®à¥Œà¤¸à¤®`,
+      optionsMeta: (count) => `${count} à¤«à¤¸à¤² à¤µà¤¿à¤•à¤²à¥à¤ª`,
+      fallbackDisclaimer: "à¤…à¤­à¥€ à¤²à¤¾à¤‡à¤µ Gemini à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆ, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¥‡ à¤¸à¥à¤à¤¾à¤µ à¤¸à¥à¤¥à¤¾à¤¨à¥€à¤¯ à¤¸à¤²à¤¾à¤¹ à¤¬à¥ˆà¤•à¤…à¤ª à¤¸à¥‡ à¤†à¤ à¤¹à¥ˆà¤‚à¥¤ à¤…à¤‚à¤¤à¤¿à¤® à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¸à¥‡ à¤ªà¤¹à¤²à¥‡ à¤ªà¤¾à¤¸ à¤•à¥‡ à¤•à¥ƒà¤·à¤¿ à¤µà¤¿à¤¶à¥‡à¤·à¤œà¥à¤ž à¤¸à¥‡ à¤ªà¥à¤·à¥à¤Ÿà¤¿ à¤•à¤°à¥‡à¤‚à¥¤",
+      liveDisclaimer: "AI à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤¤à¥ˆà¤¯à¤¾à¤° à¤¸à¥à¤à¤¾à¤µà¥¤ à¤…à¤‚à¤¤à¤¿à¤® à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¸à¥‡ à¤ªà¤¹à¤²à¥‡ à¤¸à¥à¤¥à¤¾à¤¨à¥€à¤¯ à¤•à¥ƒà¤·à¤¿ à¤µà¤¿à¤¶à¥‡à¤·à¤œà¥à¤ž à¤¸à¥‡ à¤ªà¥à¤·à¥à¤Ÿà¤¿ à¤•à¤°à¥‡à¤‚à¥¤",
+      retryLiveAi: "à¤²à¤¾à¤‡à¤µ AI à¤«à¤¿à¤° à¤†à¤œà¤¼à¤®à¤¾à¤à¤",
+      followUpTitle: "à¤†à¤—à¥‡ à¤¸à¤µà¤¾à¤² à¤ªà¥‚à¤›à¥‡à¤‚",
+      followUpPlaceholder: "à¤‡à¤¸ à¤«à¤¸à¤² à¤•à¥‡ à¤¬à¤¾à¤°à¥‡ à¤®à¥‡à¤‚ à¤•à¥à¤› à¤­à¥€ à¤ªà¥‚à¤›à¥‡à¤‚...",
+      followUpSend: "à¤­à¥‡à¤œà¥‡à¤‚",
+      followUpThinking: "à¤¸à¥‹à¤š à¤°à¤¹à¤¾ à¤¹à¥ˆ...",
+      followUpError: "à¤…à¤­à¥€ à¤œà¤µà¤¾à¤¬ à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤² à¤ªà¤¾à¤¯à¤¾à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤",
+      voiceUnsupported: "à¤‡à¤¸ à¤¬à¥à¤°à¤¾à¤‰à¤œà¤¼à¤° à¤®à¥‡à¤‚ à¤µà¥‰à¤‡à¤¸ à¤‡à¤¨à¤ªà¥à¤Ÿ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤ Chrome à¤¯à¤¾ Edge à¤†à¤œà¤¼à¤®à¤¾à¤à¤, à¤¯à¤¾ à¤œà¤—à¤¹ à¤•à¤¾ à¤¨à¤¾à¤® à¤Ÿà¤¾à¤‡à¤ª à¤•à¤°à¥‡à¤‚à¥¤",
+      voiceStopped: "à¤µà¥‰à¤‡à¤¸ à¤‡à¤¨à¤ªà¥à¤Ÿ à¤°à¥‹à¤• à¤¦à¤¿à¤¯à¤¾ à¤—à¤¯à¤¾à¥¤",
+      voiceBlocked: "à¤®à¤¾à¤‡à¤•à¥à¤°à¥‹à¤«à¤¼à¥‹à¤¨ à¤…à¤¨à¥à¤®à¤¤à¤¿ à¤¬à¤‚à¤¦ à¤¹à¥ˆà¥¤ localhost à¤•à¥‡ à¤²à¤¿à¤ à¤®à¤¾à¤‡à¤• à¤…à¤¨à¥à¤®à¤¤à¤¿ à¤¦à¥‡à¤‚, à¤«à¤¿à¤° à¤¦à¥‹à¤¬à¤¾à¤°à¤¾ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤",
+      voiceListening: "à¤¸à¥à¤¨ à¤°à¤¹à¤¾ à¤¹à¥‚à¤... à¤…à¤ªà¤¨à¤¾ à¤œà¤¿à¤²à¤¾ à¤¯à¤¾ à¤°à¤¾à¤œà¥à¤¯ à¤•à¤¾ à¤¨à¤¾à¤® à¤¬à¥‹à¤²à¥‡à¤‚à¥¤",
+      voiceHeard: (transcript) => `"${transcript}" à¤¸à¥à¤¨à¤¾ à¤—à¤¯à¤¾à¥¤ à¤†à¤—à¥‡ à¤¬à¤¢à¤¼à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤®à¥Œà¤¸à¤® à¤šà¥à¤¨à¥‡à¤‚à¥¤`,
+      voiceNoMatch: "à¤¬à¥‹à¤²à¥€ à¤—à¤ˆ à¤¬à¤¾à¤¤ à¤¸à¤®à¤ à¤®à¥‡à¤‚ à¤¨à¤¹à¥€à¤‚ à¤†à¤ˆà¥¤ à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚ à¤¯à¤¾ à¤œà¤—à¤¹ à¤Ÿà¤¾à¤‡à¤ª à¤•à¤°à¥‡à¤‚à¥¤",
+      voiceStartFailed: "à¤µà¥‰à¤‡à¤¸ à¤‡à¤¨à¤ªà¥à¤Ÿ à¤¶à¥à¤°à¥‚ à¤¨à¤¹à¥€à¤‚ à¤¹à¥‹ à¤¸à¤•à¤¾à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤œà¤—à¤¹ à¤•à¤¾ à¤¨à¤¾à¤® à¤Ÿà¤¾à¤‡à¤ª à¤•à¤°à¥‡à¤‚à¥¤",
+      voiceButtonIdle: "à¤¬à¥‹à¤²à¥‡à¤‚",
+      voiceButtonActive: "à¤°à¥‹à¤•à¥‡à¤‚",
+      voiceIdleAria: "à¤œà¤¿à¤²à¥‡ à¤•à¤¾ à¤¨à¤¾à¤® à¤¬à¥‹à¤²à¥‡à¤‚",
+      voiceActiveAria: "à¤¸à¥à¤¨à¤¨à¤¾ à¤¬à¤‚à¤¦ à¤•à¤°à¥‡à¤‚",
+      cardWater: "à¤ªà¤¾à¤¨à¥€",
+      cardReason: "à¤¯à¤¹ à¤•à¥à¤¯à¥‹à¤‚ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤ à¤¹à¥ˆ",
+      cardSoil: "à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤ à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€",
+      genericAiError: "AI à¤¸à¥à¤à¤¾à¤µ à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤² à¤¸à¤•à¥‡à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤",
     };
   }
 
@@ -745,14 +658,14 @@ function localizeAdvisorScale(value, language, kind) {
   const normalized = String(value || "").toLowerCase();
   if (language === "hindi") {
     if (kind === "confidence") {
-      if (normalized === "high") return "उच्च";
-      if (normalized === "medium") return "मध्यम";
-      if (normalized === "low") return "कम";
+      if (normalized === "high") return "à¤‰à¤šà¥à¤š";
+      if (normalized === "medium") return "à¤®à¤§à¥à¤¯à¤®";
+      if (normalized === "low") return "à¤•à¤®";
     }
     if (kind === "fit") {
-      if (normalized === "perfect") return "बेहतरीन";
-      if (normalized === "good") return "अच्छा";
-      if (normalized === "poor") return "कमज़ोर";
+      if (normalized === "perfect") return "à¤¬à¥‡à¤¹à¤¤à¤°à¥€à¤¨";
+      if (normalized === "good") return "à¤…à¤šà¥à¤›à¤¾";
+      if (normalized === "poor") return "à¤•à¤®à¤œà¤¼à¥‹à¤°";
     }
   }
   if (language === "hinglish") {
@@ -782,109 +695,168 @@ function clampToFieldRange(id, rawValue) {
 }
 
 function getSuitabilityMeta(score, language = "english") {
-  const ui = getCropUi(language);
+  const ui = normalizeLocalizedCopy(getCropUi(language));
   if (score >= 85) return { label: ui.suitabilityHigh, tone: "high", note: ui.suitabilityHighNote };
   if (score >= 65) return { label: ui.suitabilityMid, tone: "mid", note: ui.suitabilityMidNote };
   return { label: ui.suitabilityLow, tone: "low", note: ui.suitabilityLowNote };
 }
 
+function getConfidenceExplanation(score, language = "english") {
+  if (language === "hindi") {
+    if (score >= 85) return { title: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤¸à¥à¤¤à¤°", detail: "à¤¯à¤¹ à¤¸à¥à¤à¤¾à¤µ à¤®à¤œà¤¬à¥‚à¤¤ à¤¹à¥ˆ à¤”à¤° à¤®à¥‰à¤¡à¤² à¤†à¤‰à¤Ÿà¤ªà¥à¤Ÿ à¤‡à¤¸ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤•à¤¾ à¤…à¤šà¥à¤›à¤¾ à¤¸à¤®à¤°à¥à¤¥à¤¨ à¤•à¤°à¤¤à¥‡ à¤¹à¥ˆà¤‚à¥¤" };
+    if (score >= 65) return { title: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤¸à¥à¤¤à¤°", detail: "à¤¯à¤¹ à¤¸à¥à¤à¤¾à¤µ à¤‰à¤ªà¤¯à¥‹à¤—à¥€ à¤¹à¥ˆ, à¤²à¥‡à¤•à¤¿à¤¨ à¤–à¥‡à¤¤ à¤•à¥€ à¤µà¤¾à¤¸à¥à¤¤à¤µà¤¿à¤• à¤¸à¥à¤¥à¤¿à¤¤à¤¿ à¤•à¥‡ à¤¸à¤¾à¤¥ à¤®à¤¿à¤²à¤¾à¤¨ à¤•à¤°à¤¨à¤¾ à¤¬à¥‡à¤¹à¤¤à¤° à¤°à¤¹à¥‡à¤—à¤¾à¥¤" };
+    return { title: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤¸à¥à¤¤à¤°", detail: "à¤¯à¤¹ à¤•à¤®-à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ à¤µà¤¾à¤²à¤¾ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤¹à¥ˆ; à¤²à¤¾à¤—à¥‚ à¤•à¤°à¤¨à¥‡ à¤¸à¥‡ à¤ªà¤¹à¤²à¥‡ à¤…à¤¤à¤¿à¤°à¤¿à¤•à¥à¤¤ à¤œà¤¾à¤‚à¤š à¤•à¤°à¤¨à¤¾ à¤‰à¤šà¤¿à¤¤ à¤°à¤¹à¥‡à¤—à¤¾à¥¤" };
+  }
+
+  if (language === "hinglish") {
+    if (score >= 85) return { title: "Confidence level", detail: "Yeh result strong hai aur model output is recommendation ko achha support deta hai." };
+    if (score >= 65) return { title: "Confidence level", detail: "Yeh recommendation useful lagti hai, lekin field conditions ke saath verify karna better rahega." };
+    return { title: "Confidence level", detail: "Yeh low-confidence result hai, isliye final decision se pehle extra verification karni chahiye." };
+  }
+
+  if (score >= 85) return { title: "Confidence level", detail: "This is a strong recommendation and the model outputs support the result well." };
+  if (score >= 65) return { title: "Confidence level", detail: "This recommendation is usable, but it should still be checked against real field conditions." };
+  return { title: "Confidence level", detail: "This is a low-confidence result, so it should be verified before acting on it." };
+}
+
+function getConsensusExplanation(agreeingCount, totalModels, language = "english") {
+  if (language === "hindi") {
+    if (agreeingCount === totalModels) return { title: "à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤à¤¿", detail: "à¤¸à¤­à¥€ à¤®à¥‰à¤¡à¤² à¤‡à¤¸à¥€ à¤«à¤¸à¤² à¤•à¥€ à¤“à¤° à¤‡à¤¶à¤¾à¤°à¤¾ à¤•à¤° à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚, à¤‡à¤¸à¤²à¤¿à¤ à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤…à¤ªà¥‡à¤•à¥à¤·à¤¾à¤•à¥ƒà¤¤ à¤¸à¥à¤¥à¤¿à¤° à¤¹à¥ˆà¥¤" };
+    if (agreeingCount >= 2) return { title: "à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤à¤¿", detail: "à¤…à¤§à¤¿à¤•à¤¾à¤‚à¤¶ à¤®à¥‰à¤¡à¤² à¤‡à¤¸ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤¸à¥‡ à¤¸à¤¹à¤®à¤¤ à¤¹à¥ˆà¤‚, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¤¹ à¤¸à¤‚à¤¤à¥à¤²à¤¿à¤¤ à¤¸à¥à¤à¤¾à¤µ à¤®à¤¾à¤¨à¤¾ à¤œà¤¾ à¤¸à¤•à¤¤à¤¾ à¤¹à¥ˆà¥¤" };
+    return { title: "à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤à¤¿", detail: "à¤®à¥‰à¤¡à¤² à¤…à¤²à¤—-à¤…à¤²à¤— à¤¸à¥à¤à¤¾à¤µ à¤¦à¥‡ à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚, à¤‡à¤¸à¤²à¤¿à¤ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤•à¥‹ à¤¸à¤¾à¤µà¤§à¤¾à¤¨à¥€ à¤¸à¥‡ à¤ªà¤¢à¤¼à¤¨à¤¾ à¤šà¤¾à¤¹à¤¿à¤à¥¤" };
+  }
+
+  if (language === "hinglish") {
+    if (agreeingCount === totalModels) return { title: "Model consensus", detail: "Saare models isi crop par agree kar rahe hain, isliye decision ka signal kaafi stable hai." };
+    if (agreeingCount >= 2) return { title: "Model consensus", detail: "Most models is result se agree karte hain, so this looks like a balanced recommendation." };
+    return { title: "Model consensus", detail: "Models alag-alag outputs de rahe hain, so result ko thoda caution ke saath dekhna chahiye." };
+  }
+
+  if (agreeingCount === totalModels) return { title: "Model consensus", detail: "All models point to the same crop, so the decision signal is relatively stable." };
+  if (agreeingCount >= 2) return { title: "Model consensus", detail: "Most models agree with this result, so it looks like a balanced recommendation." };
+  return { title: "Model consensus", detail: "The models disagree with each other, so the result should be read with extra caution." };
+}
+
+function getDecisionEdgeExplanation(finalConf, bestAlt, language = "english") {
+  const margin = bestAlt ? Math.max(0, finalConf - bestAlt.conf) : finalConf;
+
+  if (language === "hindi") {
+    if (!bestAlt) return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: "à¤•à¥‹à¤ˆ à¤®à¤œà¤¬à¥‚à¤¤ à¤µà¥ˆà¤•à¤²à¥à¤ªà¤¿à¤• à¤ªà¥à¤°à¤¤à¤¿à¤¸à¥à¤ªà¤°à¥à¤§à¥€ à¤¸à¤¾à¤®à¤¨à¥‡ à¤¨à¤¹à¥€à¤‚ à¤†à¤¯à¤¾, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¤¹à¥€ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤¸à¤¬à¤¸à¥‡ à¤¸à¥à¤ªà¤·à¥à¤Ÿ à¤µà¤¿à¤•à¤²à¥à¤ª à¤¹à¥ˆà¥¤" };
+    if (margin >= 20) return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: `à¤®à¥à¤–à¥à¤¯ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤”à¤° à¤…à¤—à¤²à¥‡ à¤µà¤¿à¤•à¤²à¥à¤ª à¤®à¥‡à¤‚ à¤²à¤—à¤­à¤— ${margin.toFixed(1)}% à¤•à¤¾ à¤…à¤‚à¤¤à¤° à¤¹à¥ˆ, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¤¹ à¤šà¤¯à¤¨ à¤¸à¥à¤ªà¤·à¥à¤Ÿ à¤¬à¤¢à¤¼à¤¤ à¤¦à¤¿à¤–à¤¾à¤¤à¤¾ à¤¹à¥ˆà¥¤` };
+    if (margin >= 8) return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: `à¤®à¥à¤–à¥à¤¯ à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤•à¥€ à¤¬à¤¢à¤¼à¤¤ à¤²à¤—à¤­à¤— ${margin.toFixed(1)}% à¤¹à¥ˆ, à¤‡à¤¸à¤²à¤¿à¤ à¤¯à¤¹ à¤¬à¥‡à¤¹à¤¤à¤° à¤¹à¥ˆ à¤²à¥‡à¤•à¤¿à¤¨ à¤¬à¤¹à¥à¤¤ à¤¦à¥‚à¤° à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤` };
+    return { title: "à¤¨à¤¿à¤°à¥à¤£à¤¯ à¤¬à¤¢à¤¼à¤¤", detail: `à¤®à¥à¤–à¥à¤¯ à¤”à¤° à¤µà¥ˆà¤•à¤²à¥à¤ªà¤¿à¤• à¤ªà¤°à¤¿à¤£à¤¾à¤® à¤•à¤¾à¤«à¥€ à¤•à¤°à¥€à¤¬ à¤¹à¥ˆà¤‚ (à¤²à¤—à¤­à¤— ${margin.toFixed(1)}% à¤…à¤‚à¤¤à¤°), à¤‡à¤¸à¤²à¤¿à¤ à¤¸à¥à¤¥à¤¾à¤¨à¥€à¤¯ à¤œà¤¾à¤‚à¤š à¤‰à¤ªà¤¯à¥‹à¤—à¥€ à¤°à¤¹à¥‡à¤—à¥€à¥¤` };
+  }
+
+  if (language === "hinglish") {
+    if (!bestAlt) return { title: "Decision edge", detail: "Koi strong alternative saamne nahi aaya, so this looks like the clearest result." };
+    if (margin >= 20) return { title: "Decision edge", detail: `Final result next option se lagbhag ${margin.toFixed(1)}% aage hai, so iski lead kaafi clear hai.` };
+    if (margin >= 8) return { title: "Decision edge", detail: `Final result ki lead around ${margin.toFixed(1)}% hai, so yeh better lagta hai but gap bahut huge nahi hai.` };
+    return { title: "Decision edge", detail: `Final aur alternative result ka gap sirf ${margin.toFixed(1)}% ke around hai, so local validation helpful rahegi.` };
+  }
+
+  if (!bestAlt) return { title: "Decision edge", detail: "No strong competing alternative appeared, so this is the clearest result." };
+  if (margin >= 20) return { title: "Decision edge", detail: `The final result leads the next option by about ${margin.toFixed(1)}%, so the selection has a clear edge.` };
+  if (margin >= 8) return { title: "Decision edge", detail: `The final result leads by around ${margin.toFixed(1)}%, so it looks better but not overwhelmingly so.` };
+  return { title: "Decision edge", detail: `The final and alternative results are close (about ${margin.toFixed(1)}% apart), so local validation would be helpful.` };
+}
+
 function getLocalizedSeasons(language = "english") {
   if (language === "hindi") {
     return [
-      { value:"Kharif", label:"खरीफ", desc:"जून - अक्तूबर · मानसून", icon:"🌧" },
-      { value:"Rabi",   label:"रबी",   desc:"नवंबर - अप्रैल · सर्दी", icon:"❄"  },
-      { value:"Zaid",   label:"ज़ायद", desc:"मार्च - जून · गर्मी", icon:"☀"  },
+      { value:"Kharif", label:"à¤–à¤°à¥€à¤«", desc:"à¤œà¥‚à¤¨ - à¤…à¤•à¥à¤¤à¥‚à¤¬à¤° Â· à¤®à¤¾à¤¨à¤¸à¥‚à¤¨", icon:"ðŸŒ§" },
+      { value:"Rabi",   label:"à¤°à¤¬à¥€",   desc:"à¤¨à¤µà¤‚à¤¬à¤° - à¤…à¤ªà¥à¤°à¥ˆà¤² Â· à¤¸à¤°à¥à¤¦à¥€", icon:"â„"  },
+      { value:"Zaid",   label:"à¤œà¤¼à¤¾à¤¯à¤¦", desc:"à¤®à¤¾à¤°à¥à¤š - à¤œà¥‚à¤¨ Â· à¤—à¤°à¥à¤®à¥€", icon:"â˜€"  },
     ];
   }
 
   if (language === "hinglish") {
     return [
-      { value:"Kharif", label:"Kharif", desc:"Jun - Oct · Monsoon", icon:"🌧" },
-      { value:"Rabi",   label:"Rabi",   desc:"Nov - Apr · Winter", icon:"❄"  },
-      { value:"Zaid",   label:"Zaid",   desc:"Mar - Jun · Summer", icon:"☀"  },
+      { value:"Kharif", label:"Kharif", desc:"Jun - Oct Â· Monsoon", icon:"ðŸŒ§" },
+      { value:"Rabi",   label:"Rabi",   desc:"Nov - Apr Â· Winter", icon:"â„"  },
+      { value:"Zaid",   label:"Zaid",   desc:"Mar - Jun Â· Summer", icon:"â˜€"  },
     ];
   }
 
-  return SEASONS;
+  return DISPLAY_SEASONS;
 }
 
 function getCropUi(language = "english") {
   if (language === "hindi") {
     return {
-      retry: "फिर कोशिश करें",
-      autoFillWeather: "मौसम से ऑटो-फिल",
-      autoFillPlaceholder: "शहर लिखें (जैसे दिल्ली, मुंबई...)",
-      autoFillLoading: "लाया जा रहा है...",
-      autoFillAction: "ऑटो-फिल",
-      optionalContext: "अतिरिक्त संदर्भ",
-      regionLabel: "क्षेत्र या राज्य",
-      regionHint: "स्थानीय संदर्भ वैकल्पिक है",
-      farmerProfile: "किसान प्रोफ़ाइल",
-      farmerName: "किसान का नाम",
-      farmName: "खेत का नाम",
-      defaultRegion: "डिफ़ॉल्ट क्षेत्र",
-      preferredLanguage: "पसंदीदा भाषा",
-      saveProfile: "प्रोफ़ाइल सहेजें",
-      applyProfile: "फ़ॉर्म में भरें",
-      clearProfile: "साफ़ करें",
-      soilClimate: "मिट्टी और जलवायु मानक",
-      analysePredict: "विश्लेषण करें और सुझाव पाएँ",
-      readyToPredict: "सुझाव के लिए तैयार",
-      reviewValues: "आगे बढ़ने से पहले हाइलाइट किए गए मान जाँचें",
-      fieldsRemaining: (count) => `${count} फ़ील्ड बाकी`,
-      requestTimedOut: "रिक्वेस्ट में समय लग गया। कृपया फिर से कोशिश करें।",
-      unableToReach: "सर्वर से जुड़ नहीं पाया। कृपया फिर से कोशिश करें।",
-      mlRecommendedCrop: "ML द्वारा सुझाई गई फसल",
-      confidence: "विश्वास",
-      share: "शेयर",
-      supportedBy: "समर्थित मॉडल",
-      lowConfidence: "कम विश्वास - मॉडल सहमत नहीं हैं। कृपया मैन्युअली जाँचें।",
-      alternative: "विकल्प",
-      topSuggestions: "शीर्ष सुझाव",
-      whyThisCrop: "यह फसल क्यों",
-      regionSeasonContext: "क्षेत्र और मौसम संदर्भ",
-      region: "क्षेत्र",
-      season: "मौसम",
-      cropCalendar: "फसल कैलेंडर",
-      modelBreakdown: "मॉडल विवरण",
-      winner: "विजेता",
-      downloadResult: "रिज़ल्ट डाउनलोड करें",
-      goToFertilizer: "उर्वरक सुझाव पर जाएँ",
-      backToPrediction: "सुझाव पर वापस जाएँ",
-      soilGaugeLabel: "मिट्टी की सेहत",
-      supportedByPrefix: "समर्थन मिला",
-      yourInputsIdeal: "आपकी मिट्टी बनाम आदर्श मान",
-      modelConsensus: "मॉडल सहमति",
-      allAgree: "सभी मॉडल सहमत हैं",
-      dotCloser: "बिंदु सहमत मॉडल की ओर है",
-      sow: "बुवाई",
-      growing: "बढ़वार",
-      harvest: "कटाई",
-      yourInputs: "आपके इनपुट",
-      idealRange: "आदर्श सीमा",
-      soilGood: "अच्छा",
-      soilFair: "सामान्य",
-      soilPoor: "कमज़ोर",
-      soilGreatTip: "मिट्टी का संतुलन अच्छा है",
-      soilNeedsAttentionTip: "कुछ पोषक तत्वों पर ध्यान देने की ज़रूरत है",
-      soilNeedsImprovementTip: "मिट्टी में सुधार की ज़रूरत है",
-      suitabilityHigh: "बहुत उपयुक्त",
-      suitabilityMid: "मध्यम रूप से उपयुक्त",
-      suitabilityLow: "सावधानी बरतें",
-      suitabilityHighNote: "यह सुझाव आपकी मौजूदा परिस्थितियों से अच्छी तरह मेल खाता है।",
-      suitabilityMidNote: "सुझाव ठीक है, लेकिन कुछ स्थितियों पर नज़र रखना बेहतर रहेगा।",
-      suitabilityLowNote: "इस नतीजे को सावधानी से लें और खेत की स्थिति जाँचकर ही आगे बढ़ें।",
-      required: "ज़रूरी",
-      enterCity: "कृपया शहर लिखें",
-      importPlaceholder: "अपनी मिट्टी की लैब रिपोर्ट यहाँ पेस्ट करें...\nउदाहरण:\nNitrogen: 90\nPhosphorous: 42\nPotassium: 43\npH: 6.5",
-      importDetect: "मान पहचानें",
-      importFound: "मिले हुए मान",
-      importApply: "फ़ॉर्म में भरें",
-      importNotFound: "मान पहचान नहीं पाए। कोई दूसरा फ़ॉर्मेट आज़माएँ।",
-      noDescription: "विवरण उपलब्ध नहीं है।",
-      pasteLabReport: "लैब रिपोर्ट पेस्ट करें",
-      loadError: "शहर से मौसम डेटा नहीं मिला।",
-      weatherFetchFailed: "मौसम डेटा नहीं मिल पाया।",
+      retry: "à¤«à¤¿à¤° à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚",
+      autoFillWeather: "à¤®à¥Œà¤¸à¤® à¤¸à¥‡ à¤‘à¤Ÿà¥‹-à¤«à¤¿à¤²",
+      autoFillPlaceholder: "à¤¶à¤¹à¤° à¤²à¤¿à¤–à¥‡à¤‚ (à¤œà¥ˆà¤¸à¥‡ à¤¦à¤¿à¤²à¥à¤²à¥€, à¤®à¥à¤‚à¤¬à¤ˆ...)",
+      autoFillLoading: "à¤²à¤¾à¤¯à¤¾ à¤œà¤¾ à¤°à¤¹à¤¾ à¤¹à¥ˆ...",
+      autoFillAction: "à¤‘à¤Ÿà¥‹-à¤«à¤¿à¤²",
+      optionalContext: "à¤…à¤¤à¤¿à¤°à¤¿à¤•à¥à¤¤ à¤¸à¤‚à¤¦à¤°à¥à¤­",
+      regionLabel: "à¤•à¥à¤·à¥‡à¤¤à¥à¤° à¤¯à¤¾ à¤°à¤¾à¤œà¥à¤¯",
+      regionHint: "à¤¸à¥à¤¥à¤¾à¤¨à¥€à¤¯ à¤¸à¤‚à¤¦à¤°à¥à¤­ à¤µà¥ˆà¤•à¤²à¥à¤ªà¤¿à¤• à¤¹à¥ˆ",
+      farmerProfile: "à¤•à¤¿à¤¸à¤¾à¤¨ à¤ªà¥à¤°à¥‹à¤«à¤¼à¤¾à¤‡à¤²",
+      farmerName: "à¤•à¤¿à¤¸à¤¾à¤¨ à¤•à¤¾ à¤¨à¤¾à¤®",
+      farmName: "à¤–à¥‡à¤¤ à¤•à¤¾ à¤¨à¤¾à¤®",
+      defaultRegion: "à¤¡à¤¿à¤«à¤¼à¥‰à¤²à¥à¤Ÿ à¤•à¥à¤·à¥‡à¤¤à¥à¤°",
+      preferredLanguage: "à¤ªà¤¸à¤‚à¤¦à¥€à¤¦à¤¾ à¤­à¤¾à¤·à¤¾",
+      saveProfile: "à¤ªà¥à¤°à¥‹à¤«à¤¼à¤¾à¤‡à¤² à¤¸à¤¹à¥‡à¤œà¥‡à¤‚",
+      applyProfile: "à¤«à¤¼à¥‰à¤°à¥à¤® à¤®à¥‡à¤‚ à¤­à¤°à¥‡à¤‚",
+      clearProfile: "à¤¸à¤¾à¤«à¤¼ à¤•à¤°à¥‡à¤‚",
+      soilClimate: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤”à¤° à¤œà¤²à¤µà¤¾à¤¯à¥ à¤®à¤¾à¤¨à¤•",
+      analysePredict: "à¤µà¤¿à¤¶à¥à¤²à¥‡à¤·à¤£ à¤•à¤°à¥‡à¤‚ à¤”à¤° à¤¸à¥à¤à¤¾à¤µ à¤ªà¤¾à¤à¤",
+      readyToPredict: "à¤¸à¥à¤à¤¾à¤µ à¤•à¥‡ à¤²à¤¿à¤ à¤¤à¥ˆà¤¯à¤¾à¤°",
+      reviewValues: "à¤†à¤—à¥‡ à¤¬à¤¢à¤¼à¤¨à¥‡ à¤¸à¥‡ à¤ªà¤¹à¤²à¥‡ à¤¹à¤¾à¤‡à¤²à¤¾à¤‡à¤Ÿ à¤•à¤¿à¤ à¤—à¤ à¤®à¤¾à¤¨ à¤œà¤¾à¤à¤šà¥‡à¤‚",
+      fieldsRemaining: (count) => `${count} à¤«à¤¼à¥€à¤²à¥à¤¡ à¤¬à¤¾à¤•à¥€`,
+      requestTimedOut: "à¤°à¤¿à¤•à¥à¤µà¥‡à¤¸à¥à¤Ÿ à¤®à¥‡à¤‚ à¤¸à¤®à¤¯ à¤²à¤— à¤—à¤¯à¤¾à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤",
+      unableToReach: "à¤¸à¤°à¥à¤µà¤° à¤¸à¥‡ à¤œà¥à¤¡à¤¼ à¤¨à¤¹à¥€à¤‚ à¤ªà¤¾à¤¯à¤¾à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚à¥¤",
+      mlRecommendedCrop: "ML à¤¦à¥à¤µà¤¾à¤°à¤¾ à¤¸à¥à¤à¤¾à¤ˆ à¤—à¤ˆ à¤«à¤¸à¤²",
+      confidence: "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸",
+      share: "à¤¶à¥‡à¤¯à¤°",
+      supportedBy: "à¤¸à¤®à¤°à¥à¤¥à¤¿à¤¤ à¤®à¥‰à¤¡à¤²",
+      lowConfidence: "à¤•à¤® à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸ - à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¤‚à¥¤ à¤•à¥ƒà¤ªà¤¯à¤¾ à¤®à¥ˆà¤¨à¥à¤¯à¥à¤…à¤²à¥€ à¤œà¤¾à¤à¤šà¥‡à¤‚à¥¤",
+      alternative: "à¤µà¤¿à¤•à¤²à¥à¤ª",
+      topSuggestions: "à¤¶à¥€à¤°à¥à¤· à¤¸à¥à¤à¤¾à¤µ",
+      whyThisCrop: "à¤¯à¤¹ à¤«à¤¸à¤² à¤•à¥à¤¯à¥‹à¤‚",
+      regionSeasonContext: "à¤•à¥à¤·à¥‡à¤¤à¥à¤° à¤”à¤° à¤®à¥Œà¤¸à¤® à¤¸à¤‚à¤¦à¤°à¥à¤­",
+      region: "à¤•à¥à¤·à¥‡à¤¤à¥à¤°",
+      season: "à¤®à¥Œà¤¸à¤®",
+      cropCalendar: "à¤«à¤¸à¤² à¤•à¥ˆà¤²à¥‡à¤‚à¤¡à¤°",
+      modelBreakdown: "à¤®à¥‰à¤¡à¤² à¤µà¤¿à¤µà¤°à¤£",
+      winner: "à¤µà¤¿à¤œà¥‡à¤¤à¤¾",
+      downloadResult: "à¤°à¤¿à¤œà¤¼à¤²à¥à¤Ÿ à¤¡à¤¾à¤‰à¤¨à¤²à¥‹à¤¡ à¤•à¤°à¥‡à¤‚",
+      goToFertilizer: "à¤‰à¤°à¥à¤µà¤°à¤• à¤¸à¥à¤à¤¾à¤µ à¤ªà¤° à¤œà¤¾à¤à¤",
+      backToPrediction: "à¤¸à¥à¤à¤¾à¤µ à¤ªà¤° à¤µà¤¾à¤ªà¤¸ à¤œà¤¾à¤à¤",
+      soilGaugeLabel: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤•à¥€ à¤¸à¥‡à¤¹à¤¤",
+      supportedByPrefix: "à¤¸à¤®à¤°à¥à¤¥à¤¨ à¤®à¤¿à¤²à¤¾",
+      yourInputsIdeal: "à¤†à¤ªà¤•à¥€ à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤¬à¤¨à¤¾à¤® à¤†à¤¦à¤°à¥à¤¶ à¤®à¤¾à¤¨",
+      modelConsensus: "à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤à¤¿",
+      allAgree: "à¤¸à¤­à¥€ à¤®à¥‰à¤¡à¤² à¤¸à¤¹à¤®à¤¤ à¤¹à¥ˆà¤‚",
+      dotCloser: "à¤¬à¤¿à¤‚à¤¦à¥ à¤¸à¤¹à¤®à¤¤ à¤®à¥‰à¤¡à¤² à¤•à¥€ à¤“à¤° à¤¹à¥ˆ",
+      sow: "à¤¬à¥à¤µà¤¾à¤ˆ",
+      growing: "à¤¬à¤¢à¤¼à¤µà¤¾à¤°",
+      harvest: "à¤•à¤Ÿà¤¾à¤ˆ",
+      yourInputs: "à¤†à¤ªà¤•à¥‡ à¤‡à¤¨à¤ªà¥à¤Ÿ",
+      idealRange: "à¤†à¤¦à¤°à¥à¤¶ à¤¸à¥€à¤®à¤¾",
+      soilGood: "à¤…à¤šà¥à¤›à¤¾",
+      soilFair: "à¤¸à¤¾à¤®à¤¾à¤¨à¥à¤¯",
+      soilPoor: "à¤•à¤®à¤œà¤¼à¥‹à¤°",
+      soilGreatTip: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤•à¤¾ à¤¸à¤‚à¤¤à¥à¤²à¤¨ à¤…à¤šà¥à¤›à¤¾ à¤¹à¥ˆ",
+      soilNeedsAttentionTip: "à¤•à¥à¤› à¤ªà¥‹à¤·à¤• à¤¤à¤¤à¥à¤µà¥‹à¤‚ à¤ªà¤° à¤§à¥à¤¯à¤¾à¤¨ à¤¦à¥‡à¤¨à¥‡ à¤•à¥€ à¤œà¤¼à¤°à¥‚à¤°à¤¤ à¤¹à¥ˆ",
+      soilNeedsImprovementTip: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤®à¥‡à¤‚ à¤¸à¥à¤§à¤¾à¤° à¤•à¥€ à¤œà¤¼à¤°à¥‚à¤°à¤¤ à¤¹à¥ˆ",
+      suitabilityHigh: "à¤¬à¤¹à¥à¤¤ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤",
+      suitabilityMid: "à¤®à¤§à¥à¤¯à¤® à¤°à¥‚à¤ª à¤¸à¥‡ à¤‰à¤ªà¤¯à¥à¤•à¥à¤¤",
+      suitabilityLow: "à¤¸à¤¾à¤µà¤§à¤¾à¤¨à¥€ à¤¬à¤°à¤¤à¥‡à¤‚",
+      suitabilityHighNote: "à¤¯à¤¹ à¤¸à¥à¤à¤¾à¤µ à¤†à¤ªà¤•à¥€ à¤®à¥Œà¤œà¥‚à¤¦à¤¾ à¤ªà¤°à¤¿à¤¸à¥à¤¥à¤¿à¤¤à¤¿à¤¯à¥‹à¤‚ à¤¸à¥‡ à¤…à¤šà¥à¤›à¥€ à¤¤à¤°à¤¹ à¤®à¥‡à¤² à¤–à¤¾à¤¤à¤¾ à¤¹à¥ˆà¥¤",
+      suitabilityMidNote: "à¤¸à¥à¤à¤¾à¤µ à¤ à¥€à¤• à¤¹à¥ˆ, à¤²à¥‡à¤•à¤¿à¤¨ à¤•à¥à¤› à¤¸à¥à¤¥à¤¿à¤¤à¤¿à¤¯à¥‹à¤‚ à¤ªà¤° à¤¨à¤œà¤¼à¤° à¤°à¤–à¤¨à¤¾ à¤¬à¥‡à¤¹à¤¤à¤° à¤°à¤¹à¥‡à¤—à¤¾à¥¤",
+      suitabilityLowNote: "à¤‡à¤¸ à¤¨à¤¤à¥€à¤œà¥‡ à¤•à¥‹ à¤¸à¤¾à¤µà¤§à¤¾à¤¨à¥€ à¤¸à¥‡ à¤²à¥‡à¤‚ à¤”à¤° à¤–à¥‡à¤¤ à¤•à¥€ à¤¸à¥à¤¥à¤¿à¤¤à¤¿ à¤œà¤¾à¤à¤šà¤•à¤° à¤¹à¥€ à¤†à¤—à¥‡ à¤¬à¤¢à¤¼à¥‡à¤‚à¥¤",
+      required: "à¤œà¤¼à¤°à¥‚à¤°à¥€",
+      enterCity: "à¤•à¥ƒà¤ªà¤¯à¤¾ à¤¶à¤¹à¤° à¤²à¤¿à¤–à¥‡à¤‚",
+      importPlaceholder: "à¤…à¤ªà¤¨à¥€ à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤•à¥€ à¤²à¥ˆà¤¬ à¤°à¤¿à¤ªà¥‹à¤°à¥à¤Ÿ à¤¯à¤¹à¤¾à¤ à¤ªà¥‡à¤¸à¥à¤Ÿ à¤•à¤°à¥‡à¤‚...\nà¤‰à¤¦à¤¾à¤¹à¤°à¤£:\nNitrogen: 90\nPhosphorous: 42\nPotassium: 43\npH: 6.5",
+      importDetect: "à¤®à¤¾à¤¨ à¤ªà¤¹à¤šà¤¾à¤¨à¥‡à¤‚",
+      importFound: "à¤®à¤¿à¤²à¥‡ à¤¹à¥à¤ à¤®à¤¾à¤¨",
+      importApply: "à¤«à¤¼à¥‰à¤°à¥à¤® à¤®à¥‡à¤‚ à¤­à¤°à¥‡à¤‚",
+      importNotFound: "à¤®à¤¾à¤¨ à¤ªà¤¹à¤šà¤¾à¤¨ à¤¨à¤¹à¥€à¤‚ à¤ªà¤¾à¤à¥¤ à¤•à¥‹à¤ˆ à¤¦à¥‚à¤¸à¤°à¤¾ à¤«à¤¼à¥‰à¤°à¥à¤®à¥‡à¤Ÿ à¤†à¤œà¤¼à¤®à¤¾à¤à¤à¥¤",
+      noDescription: "à¤µà¤¿à¤µà¤°à¤£ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤",
+      pasteLabReport: "à¤²à¥ˆà¤¬ à¤°à¤¿à¤ªà¥‹à¤°à¥à¤Ÿ à¤ªà¥‡à¤¸à¥à¤Ÿ à¤•à¤°à¥‡à¤‚",
+      loadError: "à¤¶à¤¹à¤° à¤¸à¥‡ à¤®à¥Œà¤¸à¤® à¤¡à¥‡à¤Ÿà¤¾ à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾à¥¤",
+      weatherFetchFailed: "à¤®à¥Œà¤¸à¤® à¤¡à¥‡à¤Ÿà¤¾ à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤² à¤ªà¤¾à¤¯à¤¾à¥¤",
     };
   }
 
@@ -1049,8 +1021,8 @@ function getProfileLanguageOptions(language = "english") {
   if (language === "hindi") {
     return [
       { value: "English", label: "English" },
-      { value: "Hindi", label: "हिन्दी" },
-      { value: "Hinglish", label: "हिंग्लिश" },
+      { value: "Hindi", label: "à¤¹à¤¿à¤¨à¥à¤¦à¥€" },
+      { value: "Hinglish", label: "à¤¹à¤¿à¤‚à¤—à¥à¤²à¤¿à¤¶" },
     ];
   }
 
@@ -1068,13 +1040,13 @@ function getProfileLanguageOptions(language = "english") {
 function getLocalizedFieldMeta(language = "english") {
   if (language === "hindi") {
     return {
-      N: { label: "नाइट्रोजन", explainer: "नाइट्रोजन पत्तियों की बढ़वार और हरियाली के लिए ज़रूरी है। कमी होने पर पत्ते पीले पड़ते हैं।" },
-      P: { label: "फॉस्फोरस", explainer: "फॉस्फोरस जड़ों और शुरुआती बढ़वार में मदद करता है। फल और फूल के लिए भी अहम है।" },
-      K: { label: "पोटैशियम", explainer: "पोटैशियम पानी के संतुलन और रोग-प्रतिरोधक क्षमता को बेहतर बनाता है।" },
-      temperature: { label: "तापमान", explainer: "औसत दिन का तापमान। अधिकतर फसलें 15 से 30 डिग्री सेल्सियस में बेहतर बढ़ती हैं।" },
-      humidity: { label: "नमी", explainer: "हवा की आर्द्रता। बहुत अधिक नमी से फफूंदी बढ़ सकती है और कम नमी से पौधे मुरझा सकते हैं।" },
-      ph: { label: "मिट्टी का pH", explainer: "अधिकतर फसलों के लिए pH 6 से 7.5 अच्छा माना जाता है।" },
-      rainfall: { label: "वर्षा", explainer: "मौसमी या वार्षिक वर्षा की मात्रा। इससे सिंचाई की ज़रूरत समझने में मदद मिलती है।" },
+      N: { label: "à¤¨à¤¾à¤‡à¤Ÿà¥à¤°à¥‹à¤œà¤¨", explainer: "à¤¨à¤¾à¤‡à¤Ÿà¥à¤°à¥‹à¤œà¤¨ à¤ªà¤¤à¥à¤¤à¤¿à¤¯à¥‹à¤‚ à¤•à¥€ à¤¬à¤¢à¤¼à¤µà¤¾à¤° à¤”à¤° à¤¹à¤°à¤¿à¤¯à¤¾à¤²à¥€ à¤•à¥‡ à¤²à¤¿à¤ à¤œà¤¼à¤°à¥‚à¤°à¥€ à¤¹à¥ˆà¥¤ à¤•à¤®à¥€ à¤¹à¥‹à¤¨à¥‡ à¤ªà¤° à¤ªà¤¤à¥à¤¤à¥‡ à¤ªà¥€à¤²à¥‡ à¤ªà¤¡à¤¼à¤¤à¥‡ à¤¹à¥ˆà¤‚à¥¤" },
+      P: { label: "à¤«à¥‰à¤¸à¥à¤«à¥‹à¤°à¤¸", explainer: "à¤«à¥‰à¤¸à¥à¤«à¥‹à¤°à¤¸ à¤œà¤¡à¤¼à¥‹à¤‚ à¤”à¤° à¤¶à¥à¤°à¥à¤†à¤¤à¥€ à¤¬à¤¢à¤¼à¤µà¤¾à¤° à¤®à¥‡à¤‚ à¤®à¤¦à¤¦ à¤•à¤°à¤¤à¤¾ à¤¹à¥ˆà¥¤ à¤«à¤² à¤”à¤° à¤«à¥‚à¤² à¤•à¥‡ à¤²à¤¿à¤ à¤­à¥€ à¤…à¤¹à¤® à¤¹à¥ˆà¥¤" },
+      K: { label: "à¤ªà¥‹à¤Ÿà¥ˆà¤¶à¤¿à¤¯à¤®", explainer: "à¤ªà¥‹à¤Ÿà¥ˆà¤¶à¤¿à¤¯à¤® à¤ªà¤¾à¤¨à¥€ à¤•à¥‡ à¤¸à¤‚à¤¤à¥à¤²à¤¨ à¤”à¤° à¤°à¥‹à¤—-à¤ªà¥à¤°à¤¤à¤¿à¤°à¥‹à¤§à¤• à¤•à¥à¤·à¤®à¤¤à¤¾ à¤•à¥‹ à¤¬à¥‡à¤¹à¤¤à¤° à¤¬à¤¨à¤¾à¤¤à¤¾ à¤¹à¥ˆà¥¤" },
+      temperature: { label: "à¤¤à¤¾à¤ªà¤®à¤¾à¤¨", explainer: "à¤”à¤¸à¤¤ à¤¦à¤¿à¤¨ à¤•à¤¾ à¤¤à¤¾à¤ªà¤®à¤¾à¤¨à¥¤ à¤…à¤§à¤¿à¤•à¤¤à¤° à¤«à¤¸à¤²à¥‡à¤‚ 15 à¤¸à¥‡ 30 à¤¡à¤¿à¤—à¥à¤°à¥€ à¤¸à¥‡à¤²à¥à¤¸à¤¿à¤¯à¤¸ à¤®à¥‡à¤‚ à¤¬à¥‡à¤¹à¤¤à¤° à¤¬à¤¢à¤¼à¤¤à¥€ à¤¹à¥ˆà¤‚à¥¤" },
+      humidity: { label: "à¤¨à¤®à¥€", explainer: "à¤¹à¤µà¤¾ à¤•à¥€ à¤†à¤°à¥à¤¦à¥à¤°à¤¤à¤¾à¥¤ à¤¬à¤¹à¥à¤¤ à¤…à¤§à¤¿à¤• à¤¨à¤®à¥€ à¤¸à¥‡ à¤«à¤«à¥‚à¤‚à¤¦à¥€ à¤¬à¤¢à¤¼ à¤¸à¤•à¤¤à¥€ à¤¹à¥ˆ à¤”à¤° à¤•à¤® à¤¨à¤®à¥€ à¤¸à¥‡ à¤ªà¥Œà¤§à¥‡ à¤®à¥à¤°à¤à¤¾ à¤¸à¤•à¤¤à¥‡ à¤¹à¥ˆà¤‚à¥¤" },
+      ph: { label: "à¤®à¤¿à¤Ÿà¥à¤Ÿà¥€ à¤•à¤¾ pH", explainer: "à¤…à¤§à¤¿à¤•à¤¤à¤° à¤«à¤¸à¤²à¥‹à¤‚ à¤•à¥‡ à¤²à¤¿à¤ pH 6 à¤¸à¥‡ 7.5 à¤…à¤šà¥à¤›à¤¾ à¤®à¤¾à¤¨à¤¾ à¤œà¤¾à¤¤à¤¾ à¤¹à¥ˆà¥¤" },
+      rainfall: { label: "à¤µà¤°à¥à¤·à¤¾", explainer: "à¤®à¥Œà¤¸à¤®à¥€ à¤¯à¤¾ à¤µà¤¾à¤°à¥à¤·à¤¿à¤• à¤µà¤°à¥à¤·à¤¾ à¤•à¥€ à¤®à¤¾à¤¤à¥à¤°à¤¾à¥¤ à¤‡à¤¸à¤¸à¥‡ à¤¸à¤¿à¤‚à¤šà¤¾à¤ˆ à¤•à¥€ à¤œà¤¼à¤°à¥‚à¤°à¤¤ à¤¸à¤®à¤à¤¨à¥‡ à¤®à¥‡à¤‚ à¤®à¤¦à¤¦ à¤®à¤¿à¤²à¤¤à¥€ à¤¹à¥ˆà¥¤" },
     };
   }
 
@@ -1095,9 +1067,9 @@ function getLocalizedFieldMeta(language = "english") {
 
 function getZoneLabel(zone, language = "english") {
   if (language === "hindi") {
-    if (zone === "ok") return "संतुलित";
-    if (zone === "high") return "ऊँचा";
-    return "कम";
+    if (zone === "ok") return "à¤¸à¤‚à¤¤à¥à¤²à¤¿à¤¤";
+    if (zone === "high") return "à¤Šà¤à¤šà¤¾";
+    return "à¤•à¤®";
   }
   if (language === "hinglish") {
     if (zone === "ok") return "Balanced";
@@ -1108,7 +1080,7 @@ function getZoneLabel(zone, language = "english") {
   return zone;
 }
 
-// ─── #12 Voice input ──────────────────────────────────────────────────────────
+// â”€â”€â”€ #12 Voice input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function getSpeechRecognition() {
   if (typeof window === 'undefined') return null;
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -1121,13 +1093,13 @@ function speechErrorMessage(error, ui, language = 'english') {
       return ui.voiceBlocked;
     case 'no-speech':
       return language === 'hindi'
-        ? 'मुझे कुछ सुनाई नहीं दिया। फिर से कोशिश करें और जिले का नाम साफ़ बोलें।'
+        ? 'à¤®à¥à¤à¥‡ à¤•à¥à¤› à¤¸à¥à¤¨à¤¾à¤ˆ à¤¨à¤¹à¥€à¤‚ à¤¦à¤¿à¤¯à¤¾à¥¤ à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¥‹à¤¶à¤¿à¤¶ à¤•à¤°à¥‡à¤‚ à¤”à¤° à¤œà¤¿à¤²à¥‡ à¤•à¤¾ à¤¨à¤¾à¤® à¤¸à¤¾à¤«à¤¼ à¤¬à¥‹à¤²à¥‡à¤‚à¥¤'
         : language === 'hinglish'
           ? 'Maine kuch nahi suna. Dobara try karo aur district name clearly bolo.'
           : 'I did not hear anything. Try again and speak the district name clearly.';
     case 'audio-capture':
       return language === 'hindi'
-        ? 'कोई माइक्रोफ़ोन नहीं मिला। माइक कनेक्शन और ब्राउज़र अनुमति जाँचें।'
+        ? 'à¤•à¥‹à¤ˆ à¤®à¤¾à¤‡à¤•à¥à¤°à¥‹à¤«à¤¼à¥‹à¤¨ à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾à¥¤ à¤®à¤¾à¤‡à¤• à¤•à¤¨à¥‡à¤•à¥à¤¶à¤¨ à¤”à¤° à¤¬à¥à¤°à¤¾à¤‰à¤œà¤¼à¤° à¤…à¤¨à¥à¤®à¤¤à¤¿ à¤œà¤¾à¤à¤šà¥‡à¤‚à¥¤'
         : language === 'hinglish'
           ? 'Koi microphone nahi mila. Mic connection aur browser permission check karo.'
           : 'No microphone was found. Check your mic connection and browser permission.';
@@ -1144,7 +1116,7 @@ function VoiceInputButton({ onResult, onStatus, lang = 'en-IN', language = 'engl
   const [listening, setListening] = useState(false);
   const [supported, setSupported] = useState(true);
   const recRef = useRef(null);
-  const ui = getAdvisorUi(language);
+  const ui = normalizeLocalizedCopy(getAdvisorUi(language));
 
   useEffect(() => {
     setSupported(Boolean(getSpeechRecognition()));
@@ -1231,7 +1203,7 @@ function VoiceInputButton({ onResult, onStatus, lang = 'en-IN', language = 'engl
   );
 }
 
-// ─── Shared sub-components ────────────────────────────────────────────────────
+// â”€â”€â”€ Shared sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function ConfidenceBar({ value }) {
   const color = value >= 80 ? '#c8f55a' : value >= 60 ? '#f5c842' : '#f55a5a';
   return (
@@ -1266,7 +1238,7 @@ function CropDetailPanel({ cropKey, onClose }) {
 
 function LoadingSkeleton() {
   return (
-    <div className="cr-skeleton" role="status" aria-label="Loading…">
+    <div className="cr-skeleton" role="status" aria-label="Loadingâ€¦">
       <div className="cr-skeleton__img"/>
       <div className="cr-skeleton__line cr-skeleton__line--wide"/>
       <div className="cr-skeleton__line cr-skeleton__line--mid"/>
@@ -1277,11 +1249,11 @@ function LoadingSkeleton() {
   );
 }
 
-// ─── ML result view ───────────────────────────────────────────────────────────
+// â”€â”€â”€ ML result view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function MLResult({ predictionData, formData, onBack }) {
   const history = useHistory();
   const { language } = useLanguage();
-  const ui = getCropUi(language);
+  const ui = normalizeLocalizedCopy(getCropUi(language));
   const [selectedCrop, setSelectedCrop] = useState(null);
   const [imgError,     setImgError]     = useState(false);
 
@@ -1318,11 +1290,16 @@ function MLResult({ predictionData, formData, onBack }) {
     .filter(m => m.label !== finalLabel)
     .sort((a,b) => b.conf - a.conf)[0];
   const topSuggestions = getTopCropSuggestions(modelResults);
-  const reasonHighlights = getCropReasonHighlights(formData, finalLabel, language);
+  const reasonHighlights = normalizeLocalizedCopy(getCropReasonHighlights(formData, finalLabel, language));
 
   const confClass = finalConf >= 80 ? 'high' : finalConf >= 60 ? 'mid' : 'low';
-  const suitability = getSuitabilityMeta(finalConf, language);
-  const localizedSeasons = getLocalizedSeasons(language);
+  const suitability = normalizeLocalizedCopy(getSuitabilityMeta(finalConf, language));
+  const explanationCards = normalizeLocalizedCopy([
+    getConfidenceExplanation(finalConf, language),
+    getConsensusExplanation(agreeingModels.length, modelResults.length, language),
+    getDecisionEdgeExplanation(finalConf, bestAlt, language),
+  ]);
+  const localizedSeasons = normalizeLocalizedCopy(getLocalizedSeasons(language));
   const selectedSeason = localizedSeasons.find((item) => item.value === formData.season);
 
   const handleShare = () => shareResult(
@@ -1396,9 +1373,9 @@ function MLResult({ predictionData, formData, onBack }) {
           <h1 className="cr-result__crop-name">{predictedCrop?.title}</h1>
           <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', flexWrap:'wrap' }}>
             <div className={`cr-conf-pill cr-conf-pill--${confClass}`}>
-              {finalConf.toFixed(2)}% {ui.confidence} · {modelUsed}
+              {finalConf.toFixed(2)}% {ui.confidence} Â· {modelUsed}
             </div>
-            <button className="cr-share-btn" onClick={handleShare} aria-label={ui.share}>{ui.share} ↗</button>
+            <button className="cr-share-btn" onClick={handleShare} aria-label={ui.share}>{ui.share} â†—</button>
           </div>
         </div>
       </div>
@@ -1408,13 +1385,21 @@ function MLResult({ predictionData, formData, onBack }) {
           <strong>{suitability.label}</strong>
           <span>{suitability.note}</span>
         </div>
+        <div className="cr-explain-grid">
+          {explanationCards.map((card) => (
+            <div key={`${card.title}-${card.detail}`} className="cr-explain-card">
+              <div className="cr-explain-card__label">{card.title}</div>
+              <div className="cr-explain-card__text">{card.detail}</div>
+            </div>
+          ))}
+        </div>
         {agreeingModels.length > 0 && (
           <div className="cr-agree-row">
-            <span className="cr-agree-row__icon" aria-hidden="true">✓</span>
+            <span className="cr-agree-row__icon" aria-hidden="true">âœ“</span>
             <span>{ui.supportedByPrefix} <strong>{agreeingModels.join(', ')}</strong></span>
           </div>
         )}
-        {finalConf < 60 && <div className="cr-warning" role="alert">⚠ {ui.lowConfidence}</div>}
+        {finalConf < 60 && <div className="cr-warning" role="alert">âš  {ui.lowConfidence}</div>}
         {bestAlt && (
           <div className="cr-alt-row">
             <span className="cr-alt-row__label">{ui.alternative}</span>
@@ -1505,7 +1490,7 @@ function MLResult({ predictionData, formData, onBack }) {
             <div key={m.model} className={`cr-model-badge${m.label===finalLabel ? ' cr-model-badge--final':''}`} style={{ animationDelay:m.delay }}>
               <div className="cr-model-badge__header">
                 <span className="cr-model-badge__name">{m.model}</span>
-                {m.label === finalLabel && <span className="cr-model-badge__crown">★ {ui.winner}</span>}
+                {m.label === finalLabel && <span className="cr-model-badge__crown">â˜… {ui.winner}</span>}
               </div>
               <button className="cr-model-badge__crop" onClick={() => setSelectedCrop(m.label)}>{m.label}</button>
               <ConfidenceBar value={m.conf}/>
@@ -1527,12 +1512,12 @@ function MLResult({ predictionData, formData, onBack }) {
   );
 }
 
-// ─── ML panel ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ ML panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function MLPanel() {
   const { language } = useLanguage();
-  const ui = getCropUi(language);
-  const localizedSeasons = getLocalizedSeasons(language);
-  const profileLanguageOptions = getProfileLanguageOptions(language);
+  const ui = normalizeLocalizedCopy(getCropUi(language));
+  const localizedSeasons = normalizeLocalizedCopy(getLocalizedSeasons(language));
+  const profileLanguageOptions = normalizeLocalizedCopy(getProfileLanguageOptions(language));
   const [formData,       setFormData]       = useState(INITIAL_FORM);
   const [city,           setCity]           = useState("");
   const [loadingWeather, setLoadingWeather] = useState(false);
@@ -1556,8 +1541,8 @@ function MLPanel() {
   const isFormValid = filledCount === FIELDS.length && !hasRangeErrors;
   const progressPct = (filledCount / FIELDS.length) * 100;
   const soilScore   = computeSoilHealthScore(formData);
-  const localizedFieldMeta = getLocalizedFieldMeta(language);
-  const localizedFields = FIELDS.map((field) => ({
+  const localizedFieldMeta = normalizeLocalizedCopy(getLocalizedFieldMeta(language));
+  const localizedFields = DISPLAY_FIELDS.map((field) => ({
     ...field,
     ...(localizedFieldMeta[field.id] || {}),
   }));
@@ -1656,16 +1641,7 @@ function MLPanel() {
     if (!isFormValid) return;
     try {
       setLoadingStatus(true);
-      const response = await api.post("/predict_crop", {
-        N:           parseFloat(formData.N),
-        P:           parseFloat(formData.P),
-        K:           parseFloat(formData.K),
-        temperature: parseFloat(formData.temperature),
-        humidity:    parseFloat(formData.humidity),
-        ph:          parseFloat(formData.ph),
-        rainfall:    parseFloat(formData.rainfall),
-      });
-      const result = response.data;
+      const result = await predictCrop(formData);
       const finalPrediction = result.final_prediction || weightedVote(
         result.xgb_model_prediction,
         result.rf_model_prediction,
@@ -1708,9 +1684,9 @@ function MLPanel() {
     <>
       {predictionData.error && (
         <div className="cr-alert" role="alert">
-          <span className="cr-alert__icon" aria-hidden="true">⚠</span>
+          <span className="cr-alert__icon" aria-hidden="true">âš </span>
           <span>{predictionData.error}</span>
-          <button className="cr-alert__retry" onClick={() => setPredictionData({})}>{ui.retry} ↺</button>
+          <button className="cr-alert__retry" onClick={() => setPredictionData({})}>{ui.retry} â†º</button>
         </div>
       )}
 
@@ -1727,7 +1703,7 @@ function MLPanel() {
           aria-label={ui.autoFillPlaceholder}
         />
         <button onClick={handleAutoFill} disabled={loadingWeather} className="cr-autofill-btn">
-          {loadingWeather ? ui.autoFillLoading : `📍 ${ui.autoFillAction}`}
+          {loadingWeather ? ui.autoFillLoading : `ðŸ“ ${ui.autoFillAction}`}
         </button>
       </div>
 
@@ -1895,9 +1871,13 @@ function MLPanel() {
   );
 }
 
-// ─── AI advisor ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ AI advisor â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function isFallbackCrop(crop) {
   return crop.source === 'fallback' || /rule-based fallback/i.test(crop.reason || '');
+}
+
+function isFallbackAdvisorMeta(meta) {
+  return meta?.mode === 'fallback' || meta?.source === 'local-fallback';
 }
 
 function cleanAdviceReason(reason) {
@@ -1907,39 +1887,41 @@ function cleanAdviceReason(reason) {
 function getAICropPlaceholderMeta(cropKey, cropName) {
   const fallbackName = cropName || "Crop";
   const placeholderMap = {
-    wheat: { icon: "🌾", accent: "grain", label: "Wheat Field" },
-    mustard: { icon: "🌼", accent: "flower", label: "Mustard Field" },
-    chickpea: { icon: "🌿", accent: "pulse", label: "Chickpea Field" },
-    lentil: { icon: "🌱", accent: "pulse", label: "Lentil Field" },
-    rice: { icon: "🌾", accent: "grain", label: "Rice Field" },
-    maize: { icon: "🌽", accent: "grain", label: "Maize Field" },
-    cotton: { icon: "☁", accent: "fiber", label: "Cotton Field" },
-    pigeonpeas: { icon: "🌿", accent: "pulse", label: "Pigeon Pea Field" },
+    wheat: { icon: "ðŸŒ¾", accent: "grain", label: "Wheat Field" },
+    mustard: { icon: "ðŸŒ¼", accent: "flower", label: "Mustard Field" },
+    chickpea: { icon: "ðŸŒ¿", accent: "pulse", label: "Chickpea Field" },
+    lentil: { icon: "ðŸŒ±", accent: "pulse", label: "Lentil Field" },
+    rice: { icon: "ðŸŒ¾", accent: "grain", label: "Rice Field" },
+    maize: { icon: "ðŸŒ½", accent: "grain", label: "Maize Field" },
+    cotton: { icon: "â˜", accent: "fiber", label: "Cotton Field" },
+    pigeonpeas: { icon: "ðŸŒ¿", accent: "pulse", label: "Pigeon Pea Field" },
   };
 
   return placeholderMap[cropKey] || {
-    icon: "🌱",
+    icon: "ðŸŒ±",
     accent: "default",
     label: `${fallbackName} Crop`,
   };
 }
 
 function AICropCard({ crop, index, language }) {
-  const ui = getAdvisorUi(language);
+  const ui = normalizeLocalizedCopy(getAdvisorUi(language));
   const cropKey = crop.crop?.toLowerCase().replace(/\(.*?\)/g,"").replace(/\s+/g,"").replace(/[^a-z]/g,"").trim();
   const imgSrc  = CROP_IMAGE_MAP[cropKey] || null;
-  const placeholderMeta = getAICropPlaceholderMeta(cropKey, crop.crop);
+  const placeholderMeta = normalizeLocalizedCopy(getAICropPlaceholderMeta(cropKey, crop.crop));
   const confColor = crop.confidence === 'High' ? 'high' : crop.confidence === 'Medium' ? 'mid' : 'low';
   const fitColor  = crop.season_fit  === 'Perfect' ? 'high' : crop.season_fit === 'Good' ? 'mid' : 'low';
   const fallback = isFallbackCrop(crop);
   const reason = cleanAdviceReason(crop.reason);
-  const confidenceLabel = localizeAdvisorScale(crop.confidence, language, "confidence");
-  const fitLabel = localizeAdvisorScale(crop.season_fit, language, "fit");
-  const sourceLabel = fallback
+  const confidenceLabel = normalizeLocalizedCopy(localizeAdvisorScale(crop.confidence, language, "confidence"));
+  const fitLabel = normalizeLocalizedCopy(localizeAdvisorScale(crop.season_fit, language, "fit"));
+  const sourceLabel = normalizeLocalizedCopy(fallback
     ? language === "hindi"
-      ? "स्थानीय"
+      ? "à¤¸à¥à¤¥à¤¾à¤¨à¥€à¤¯"
       : "Local"
-    : "Gemini";
+    : "Gemini");
+  const confidenceWord = normalizeLocalizedCopy(language === "hindi" ? "à¤µà¤¿à¤¶à¥à¤µà¤¾à¤¸" : "confidence");
+  const fitWord = normalizeLocalizedCopy(language === "hindi" ? "à¤®à¥‡à¤²" : "fit");
 
   return (
   <div className={`ai-card${fallback ? ' ai-card--fallback' : ''}`} style={{ animationDelay: `${index * 120}ms` }}>
@@ -1964,10 +1946,10 @@ function AICropCard({ crop, index, language }) {
       
       <div className="ai-card__pills">
         <span className={`ai-pill ai-pill--${confColor}`}>
-          {confidenceLabel} {language === "hindi" ? "विश्वास" : "confidence"}
+          {confidenceLabel} {confidenceWord}
         </span>
         <span className={`ai-pill ai-pill--${fitColor}`}>
-          {fitLabel} {language === "hindi" ? "मेल" : "fit"}
+          {fitLabel} {fitWord}
         </span>
         <span className="ai-pill ai-pill--neutral">{ui.cardWater}: {crop.water_need}</span>
       </div>
@@ -1987,15 +1969,15 @@ function AICropCard({ crop, index, language }) {
 );
 }
 
-// ─── #11 AI follow-up chat ────────────────────────────────────────────────────
+// â”€â”€â”€ #11 AI follow-up chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function getFollowUpSuggestions(cropContext, language) {
   const primaryCrop = cropContext.crops?.[0] || 'this crop';
   if (language === 'hindi') {
     return [
-      `${primaryCrop} की सिंचाई कैसे करूं?`,
-      `${cropContext.area} में किस फसल की मांग बेहतर है?`,
-      'कौन से कीटों से सावधान रहना चाहिए?',
-      `${primaryCrop} के साथ कौन सी फसल लगा सकते हैं?`,
+      `${primaryCrop} à¤•à¥€ à¤¸à¤¿à¤‚à¤šà¤¾à¤ˆ à¤•à¥ˆà¤¸à¥‡ à¤•à¤°à¥‚à¤‚?`,
+      `${cropContext.area} à¤®à¥‡à¤‚ à¤•à¤¿à¤¸ à¤«à¤¸à¤² à¤•à¥€ à¤®à¤¾à¤‚à¤— à¤¬à¥‡à¤¹à¤¤à¤° à¤¹à¥ˆ?`,
+      'à¤•à¥Œà¤¨ à¤¸à¥‡ à¤•à¥€à¤Ÿà¥‹à¤‚ à¤¸à¥‡ à¤¸à¤¾à¤µà¤§à¤¾à¤¨ à¤°à¤¹à¤¨à¤¾ à¤šà¤¾à¤¹à¤¿à¤?',
+      `${primaryCrop} à¤•à¥‡ à¤¸à¤¾à¤¥ à¤•à¥Œà¤¨ à¤¸à¥€ à¤«à¤¸à¤² à¤²à¤—à¤¾ à¤¸à¤•à¤¤à¥‡ à¤¹à¥ˆà¤‚?`,
     ];
   }
   if (language === 'hinglish') {
@@ -2019,9 +2001,9 @@ function AIFollowUpChat({ cropContext, language }) {
   const [input,    setInput]    = useState('');
   const [loading,  setLoading]  = useState(false);
   const endRef = useRef(null);
-  const ui = getAdvisorUi(language);
+  const ui = normalizeLocalizedCopy(getAdvisorUi(language));
 
-  const suggestions = getFollowUpSuggestions(cropContext, language);
+  const suggestions = normalizeLocalizedCopy(getFollowUpSuggestions(cropContext, language));
 
   const send = async (text) => {
     if (!text.trim() || loading) return;
@@ -2043,7 +2025,12 @@ function AIFollowUpChat({ cropContext, language }) {
       
       setMessages(prev => [
         ...prev,
-        { role: "assistant", content: reply }
+        {
+          role: "assistant",
+          content: reply.reply,
+          mode: reply.meta?.mode || "live",
+          source: reply.meta?.source || "gemini"
+        }
       ]);
     } catch {
       setMessages(prev => [...prev, { role:'assistant', content: ui.followUpError }]);
@@ -2065,6 +2052,11 @@ function AIFollowUpChat({ cropContext, language }) {
         <div className="cr-followup__messages">
           {messages.map((m,i) => (
             <div key={i} className={`cr-followup__msg cr-followup__msg--${m.role}`}>
+              {m.role === 'assistant' && m.source && (
+                <div className="cr-followup__meta">
+                  {m.source === 'local-fallback' ? ui.offlineMode : ui.liveMode}
+                </div>
+              )}
               {renderMessageContent(m.content)}
             </div>
           ))}
@@ -2089,7 +2081,7 @@ function AIFollowUpChat({ cropContext, language }) {
   );
 }
 
-// ─── AI advisor panel ─────────────────────────────────────────────────────────
+// â”€â”€â”€ AI advisor panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function AIAdvisorPanel() {
   const profileDefaults = getFarmerProfile();
   const { language: globalLanguage } = useLanguage();
@@ -2100,8 +2092,8 @@ function AIAdvisorPanel() {
   const [error,     setError]     = useState('');
   const [voiceStatus, setVoiceStatus] = useState(null);
   const [language, setLanguage] = useState(globalLanguage || mapProfileLanguageToAdvisor(profileDefaults.language));
-  const ui = getAdvisorUi(language);
-  const localizedSeasons = getLocalizedSeasons(language);
+  const ui = normalizeLocalizedCopy(getAdvisorUi(language));
+  const localizedSeasons = normalizeLocalizedCopy(getLocalizedSeasons(language));
 
   useEffect(() => {
     if (!aiResults) {
@@ -2133,8 +2125,9 @@ function AIAdvisorPanel() {
   }
 
   if (aiResults) {
-    const cropContext = { area, season, crops:aiResults.map(c=>c.crop) };
-    const fallbackMode = aiResults.some(isFallbackCrop);
+    const resultItems = Array.isArray(aiResults.items) ? aiResults.items : [];
+    const cropContext = { area, season, crops: resultItems.map((c) => c.crop) };
+    const fallbackMode = isFallbackAdvisorMeta(aiResults.meta) || resultItems.some(isFallbackCrop);
     const modeLabel = fallbackMode ? ui.offlineMode : ui.liveMode;
     return (
       <div className="ai-results">
@@ -2158,7 +2151,7 @@ function AIAdvisorPanel() {
           <span className={`ai-results__meta-pill${fallbackMode ? ' ai-results__meta-pill--fallback' : ' ai-results__meta-pill--live'}`}>{modeLabel}</span>
           <span className="ai-results__meta-pill">{ui.languageMeta}</span>
           <span className="ai-results__meta-pill">{ui.seasonMeta(season)}</span>
-          <span className="ai-results__meta-pill">{ui.optionsMeta(aiResults.length)}</span>
+          <span className="ai-results__meta-pill">{ui.optionsMeta(resultItems.length)}</span>
         </div>
         <div className={`ai-results__disclaimer${fallbackMode ? ' ai-results__disclaimer--fallback' : ' ai-results__disclaimer--live'}`}>
           <span className="ai-results__disclaimer-icon" aria-hidden="true">AI</span>
@@ -2167,7 +2160,7 @@ function AIAdvisorPanel() {
             : ui.liveDisclaimer}
         </div>
         <div className="ai-cards-grid">
-          {aiResults.map((crop,i) => <AICropCard key={i} crop={crop} index={i} language={language}/>)}
+          {resultItems.map((crop,i) => <AICropCard key={i} crop={crop} index={i} language={language}/>)}
         </div>
         {/* #11 Follow-up chat */}
         <AIFollowUpChat cropContext={cropContext} language={language}/>
@@ -2273,7 +2266,7 @@ function AIAdvisorPanel() {
   );
 }
 
-// ─── Root component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Root component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function CropRecommender() {
   const history = useHistory();
   const { t } = useLanguage();
@@ -2330,6 +2323,9 @@ function CropRecommender() {
 }
 
 export default CropRecommender;
+
+
+
 
 
 

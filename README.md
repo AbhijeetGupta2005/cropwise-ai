@@ -14,8 +14,10 @@ CropWise AI currently includes:
 - AI crop advisor based on location and cropping season
 - AI follow-up chat for crop-specific questions
 - Hindi, English, and Hinglish response support in the AI advisor
-- Rule-based fallback recommendations when Gemini is rate-limited
+- Gemini model failover for quota and overload handling
+- Rule-based fallback recommendations when live Gemini is unavailable
 - Voice input for location entry in supported browsers
+- Local browser storage for history, language, and farmer profile
 
 ## Project Structure
 
@@ -125,10 +127,13 @@ http://localhost:5000
 
 Available routes:
 
+- `GET /`
+- `GET /health`
 - `POST /predict_crop`
 - `POST /predict_fertilizer`
 - `POST /ai-recommend`
 - `POST /ai-follow-up`
+- `GET /weather`
 
 ### Example Crop Recommendation Response
 
@@ -227,6 +232,7 @@ Create and configure your backend `.env` file:
 ```env
 GEMINI_API_KEY=your_api_key_here
 GEMINI_MODEL=gemini-2.5-flash
+GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,gemini-2.0-flash
 GEMINI_HTTP_REFERER=http://localhost:3000/
 ```
 
@@ -315,6 +321,7 @@ Required environment variables:
 ```env
 GEMINI_API_KEY=your_api_key_here
 GEMINI_MODEL=gemini-2.5-flash
+GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,gemini-2.0-flash
 GEMINI_HTTP_REFERER=https://your-vercel-frontend-url
 ```
 
@@ -335,11 +342,16 @@ This project sends a local referrer header from Flask to support that setup.
 
 ### Gemini Rate Limits
 
-If Gemini responds with `429 Too Many Requests`, the app does not fail
-completely:
+If Gemini responds with `429 Too Many Requests` or `503 Service Unavailable`,
+the app does not fail immediately:
+
+- the backend retries the active model for temporary `503` spikes
+- the backend can fail over to configured backup Gemini models
+- if live Gemini still does not succeed, the app falls back cleanly
 
 - `/ai-recommend` falls back to rule-based crop suggestions
 - `/ai-follow-up` returns a practical fallback advisory message
+- the crop UI shows a `Try Live AI Again` action when fallback mode is active
 
 ### Python Environment Note
 
@@ -379,9 +391,11 @@ npm run build
 ## Current UX Improvements Included
 
 - improved AI advisor cards
-- offline advisory mode indicator
+- live/fallback AI status indicator
+- retry action for live Gemini when fallback mode is active
 - Hindi and Hinglish language selector
 - smarter follow-up suggestions
+- better fertilizer result presentation
 - better city input styling in Chromium browsers
 - clearer voice input feedback and permission handling
 
