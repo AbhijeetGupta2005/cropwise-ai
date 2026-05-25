@@ -54,6 +54,9 @@ GEMINI_HTTP_REFERER=https://your-vercel-frontend-url
 OPENWEATHER_API_KEY=your_backend_only_openweather_api_key
 ```
 
+Keep `GEMINI_FALLBACK_MODELS` configured in deployment as a comma-separated
+list so the AI advisor can fail over cleanly before local fallback is used.
+
 ### Included deployment helpers
 
 - `render.yaml` - Render blueprint
@@ -71,6 +74,13 @@ After deployment, confirm these:
 - `POST /predict_crop` accepts valid crop input
 - `POST /predict_fertilizer` accepts valid fertilizer input
 - `POST /ai-recommend` returns either live or fallback structured metadata
+
+Sample checks:
+
+```powershell
+curl https://your-render-backend-url/health
+curl "https://your-render-backend-url/weather?city=Delhi"
+```
 
 ### Frontend
 

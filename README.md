@@ -38,6 +38,24 @@ project-root/
 `-- INTERVIEW_PREP.md
 ```
 
+## Architecture at a glance
+
+```mermaid
+flowchart TD
+    U["User"] --> FE["React frontend"]
+    FE --> API["Flask API"]
+    FE --> LS["Browser local storage"]
+    API --> CROP["Crop ensemble<br/>XGBoost + RF + KNN"]
+    API --> FERT["Fertilizer ensemble<br/>XGBoost + RF + SVM"]
+    API --> AI["Gemini advisor"]
+    AI --> FB["Fallback advisory"]
+    CROP --> OUT["Recommendation responses"]
+    FERT --> OUT
+    AI --> OUT
+    FB --> OUT
+    OUT --> FE
+```
+
 ## Tech stack
 
 - Frontend: React, Axios, React Router
@@ -281,10 +299,6 @@ cd React_Frontend\agri-ai
 npm run build
 ```
 
-Note: on this machine the production build intermittently hits a Windows
-process-spawn `EPERM` issue unrelated to the app code. When that happens, use
-the running development build plus backend tests as the immediate sanity check.
-
 ## Deployment summary
 
 Recommended free hosting setup:
@@ -293,6 +307,21 @@ Recommended free hosting setup:
 - backend on Render
 
 For the full deployment checklist, see [DEPLOYMENT.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\DEPLOYMENT.md).
+
+### Deployment smoke checklist
+
+- frontend loads on `/`
+- `/crop`, `/fertilizer`, and `/history` survive refresh
+- backend `GET /health` returns `{"status":"ok"}`
+- backend `GET /weather?city=Delhi` returns weather data without exposing the API key
+- AI advisor returns either `meta.mode = "live"` or `meta.mode = "fallback"`
+
+Quick checks:
+
+```powershell
+curl http://127.0.0.1:5000/health
+curl "http://127.0.0.1:5000/weather?city=Delhi"
+```
 
 ### Vercel frontend
 
