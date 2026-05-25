@@ -51,6 +51,7 @@ GEMINI_API_KEY=your_backend_only_gemini_api_key
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,gemini-2.0-flash
 GEMINI_HTTP_REFERER=https://your-vercel-frontend-url
+CORS_ALLOWED_ORIGINS=https://your-vercel-frontend-url
 OPENWEATHER_API_KEY=your_backend_only_openweather_api_key
 ```
 

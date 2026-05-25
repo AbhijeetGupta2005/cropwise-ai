@@ -34,8 +34,7 @@ project-root/
 |       |-- vercel.json
 |       `-- .env.example
 |-- DATASET_AUDIT.md
-|-- DEPLOYMENT.md
-`-- INTERVIEW_PREP.md
+`-- DEPLOYMENT.md
 ```
 
 ## Architecture at a glance
@@ -63,6 +62,32 @@ flowchart TD
 - ML: scikit-learn, XGBoost, joblib, NumPy
 - AI: Google Gemini API
 - Styling: custom CSS
+
+## Security essentials
+
+- Keep `GEMINI_API_KEY` and `OPENWEATHER_API_KEY` in backend env only
+- Keep real `.env` files out of Git; commit only `.env.example`
+- Production CORS should allow only the deployed frontend origin
+- AI routes always return either live or fallback metadata instead of raw provider failures
+- Browser storage is limited to profile, language, and prediction history
+- Oversized request bodies are rejected and high-traffic routes are rate-limited
+
+## Dependency status and upgrade path
+
+Current low-risk cleanup already applied:
+
+- removed unused frontend dependencies:
+  - `@material-ui/lab`
+  - `cors` (frontend package)
+  - `web-vitals`
+- kept `font-awesome` because it is still imported
+
+Recommended next upgrade path:
+
+1. move from `react-scripts@4` to a modern toolchain when time allows
+2. upgrade `axios@0.21.1` to a current maintained release after verifying API wrappers
+3. review `react-router-dom@5` migration cost before upgrading to v6+
+4. remove `@material-ui/core` only after confirming old unused UI files are gone
 
 ## Core modules
 
@@ -273,6 +298,7 @@ GEMINI_API_KEY=your_backend_only_gemini_api_key
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,gemini-2.0-flash
 GEMINI_HTTP_REFERER=http://localhost:3000/
+CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 OPENWEATHER_API_KEY=your_backend_only_openweather_api_key
 ```
 
@@ -346,6 +372,7 @@ Required backend env vars:
 - `GEMINI_MODEL`
 - `GEMINI_FALLBACK_MODELS`
 - `GEMINI_HTTP_REFERER`
+- `CORS_ALLOWED_ORIGINS`
 - `OPENWEATHER_API_KEY`
 
 ## Practical notes
@@ -363,6 +390,19 @@ If Gemini returns `429` or `503`, the backend does not fail immediately:
 OpenWeather access is handled through the backend. The frontend no longer needs
 or exposes a weather API key.
 
+### Production-ready academic prototype checklist
+
+This repo now aims to be a stable academic prototype rather than a loose demo.
+Before presenting or deploying, make sure these still hold:
+
+- frontend build passes
+- backend tests pass
+- frontend smoke tests pass
+- backend env vars are set correctly
+- `GET /health` responds cleanly
+- AI advisor falls back gracefully when live Gemini is unavailable
+- report/data folders are not mixed into app-only commits unless intentional
+
 ### Browser support
 
 - AI advisor works best in modern Chromium-based browsers
@@ -372,7 +412,6 @@ or exposes a weather API key.
 ## Project support files
 
 - Dataset notes: [DATASET_AUDIT.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\DATASET_AUDIT.md)
-- Interview prep: [INTERVIEW_PREP.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\INTERVIEW_PREP.md)
 - Deployment guide: [DEPLOYMENT.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\DEPLOYMENT.md)
 
 ## Attribution

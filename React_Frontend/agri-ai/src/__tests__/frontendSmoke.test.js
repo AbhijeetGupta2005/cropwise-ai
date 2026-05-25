@@ -1,14 +1,18 @@
 import React from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Router, Switch } from "react-router-dom";
+import { createMemoryHistory } from "history";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import CropRecommender from "../components/CropRecommender";
+import FertilizerRecommender from "../components/FertilizerRecommender";
 import PredictionHistory from "../components/PredictionHistory";
 import AIResultsPanel from "../components/crop/AIResultsPanel";
+import CropMlResultPanel from "../components/crop/CropMlResultPanel";
 import { LanguageProvider } from "../context/LanguageContext";
 
 const mockGetPredictionHistory = jest.fn();
 const mockClearPredictionHistory = jest.fn();
+const mockPredictFertilizer = jest.fn();
 
 jest.mock("../components/crop/CropMlPanel", () => function CropMlPanelMock() {
   return <div>ML Panel Mock</div>;
@@ -25,10 +29,15 @@ jest.mock("../components/crop/AIFollowUpChat", () => function AIFollowUpChatMock
 jest.mock("../utils/predictionHistory", () => ({
   clearPredictionHistory: (...args) => mockClearPredictionHistory(...args),
   getPredictionHistory: (...args) => mockGetPredictionHistory(...args),
+  savePredictionHistory: jest.fn(),
 }));
 
-function renderWithProviders(ui) {
-  window.localStorage.setItem("cw-language", "english");
+jest.mock("../api/predictions", () => ({
+  predictFertilizer: (...args) => mockPredictFertilizer(...args),
+}));
+
+function renderWithProviders(ui, language = "english") {
+  window.localStorage.setItem("cw-language", language);
 
   return render(
     <MemoryRouter>
@@ -42,7 +51,9 @@ describe("frontend smoke coverage", () => {
     mockGetPredictionHistory.mockReset();
     mockGetPredictionHistory.mockReturnValue([]);
     mockClearPredictionHistory.mockReset();
+    mockPredictFertilizer.mockReset();
     window.localStorage.clear();
+    window.sessionStorage.clear();
   });
 
   test("renders the crop page shell and switches from ML to AI tab", async () => {
@@ -54,6 +65,13 @@ describe("frontend smoke coverage", () => {
     await userEvent.click(screen.getByRole("tab", { name: /ai advisor/i }));
 
     expect(screen.getByText("AI Panel Mock")).toBeInTheDocument();
+  });
+
+  test("loads Hindi copy from saved language state", () => {
+    renderWithProviders(<CropRecommender />, "hindi");
+
+    expect(screen.getByRole("heading", { name: "फसल सुझाव" })).toBeInTheDocument();
+    expect(screen.getByText("दो इंजन | एक लक्ष्य: आपकी जमीन के लिए सही फसल")).toBeInTheDocument();
   });
 
   test("renders a live AI result state with crop cards", () => {
@@ -172,5 +190,73 @@ describe("frontend smoke coverage", () => {
     expect(screen.getByText("Crop Prediction")).toBeInTheDocument();
     expect(screen.getByText("Total Saved")).toBeInTheDocument();
     expect(screen.getByText("32.8%")).toBeInTheDocument();
+  });
+
+  test("renders fertilizer result flow from example data", async () => {
+    mockPredictFertilizer.mockResolvedValue({
+      final_prediction: "10-26-26",
+      xgb_model_prediction: "10-26-26",
+      rf_model_prediction: "10-26-26",
+      svm_model_prediction: "Urea",
+      xgb_model_probability: 97.94,
+      rf_model_probability: 95.1,
+      svm_model_probability: 40.3,
+    });
+
+    renderWithProviders(<FertilizerRecommender />);
+
+    await userEvent.click(screen.getByRole("button", { name: /load example data/i }));
+    await userEvent.click(screen.getByRole("button", { name: /analyse & predict/i }));
+
+    expect(await screen.findByText("Recommended Fertilizer")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "10-26-26 Fertilizer" })).toBeInTheDocument();
+    expect(screen.getAllByText(/Supported by/i).length).toBeGreaterThan(0);
+  });
+
+  test("carries crop result context into the fertilizer handoff flow", async () => {
+    const history = createMemoryHistory({ initialEntries: ["/crop"] });
+
+    render(
+      <Router history={history}>
+        <LanguageProvider>
+          <Switch>
+            <Route path="/crop">
+              <CropMlResultPanel
+                predictionData={{
+                  final_prediction: "mango",
+                  xgb_model_prediction: "mango",
+                  rf_model_prediction: "mango",
+                  knn_model_prediction: "mothbeans",
+                  xgb_model_probability: 32.78,
+                  rf_model_probability: 27.9,
+                  knn_model_probability: 100,
+                }}
+                formData={{
+                  N: 39,
+                  P: 29,
+                  K: 59,
+                  temperature: 14.7,
+                  humidity: 36,
+                  ph: 2.4,
+                  rainfall: 59.7,
+                  region: "Punjab",
+                  season: "rabi",
+                }}
+                onBack={jest.fn()}
+              />
+            </Route>
+            <Route path="/fertilizer">
+              <FertilizerRecommender />
+            </Route>
+          </Switch>
+        </LanguageProvider>
+      </Router>
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /go to fertilizer prediction/i }));
+
+    expect(await screen.findByText("Continuing with Mango Crop")).toBeInTheDocument();
+    expect(screen.getByText("Prefilled NPK and climate values")).toBeInTheDocument();
+    expect(screen.getByText("Punjab")).toBeInTheDocument();
   });
 });

@@ -16,5 +16,7 @@ services:
         value: gemini-2.5-flash-lite,gemini-2.0-flash
       - key: GEMINI_HTTP_REFERER
         sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
       - key: OPENWEATHER_API_KEY
         sync: false
