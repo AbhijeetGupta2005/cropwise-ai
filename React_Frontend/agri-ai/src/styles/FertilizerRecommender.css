@@ -1071,8 +1071,19 @@
 @media (max-width: 620px) {
   .fr-page { padding: 3rem 1rem 4rem; }
   .fr-card { padding: 1.5rem; }
-  .fr-card__header { flex-wrap: wrap; }
-  .fr-btn--example { margin-left: 0; margin-top: 0.5rem; }
+  .fr-card__header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .fr-card__title { font-size: clamp(2rem, 11vw, 2.8rem); }
+  .fr-card__summary { max-width: 100%; }
+  .fr-btn--example {
+    margin-left: 0;
+    margin-top: 0.5rem;
+    width: 100%;
+    justify-content: center;
+  }
   .fr-handoff__meta { flex-direction: column; }
   .fr-inputs-grid { grid-template-columns: 1fr; }
   .fr-field:last-child:nth-child(3n + 1) { grid-column: auto; }
@@ -1080,7 +1091,50 @@
   .fr-models-grid { grid-template-columns: 1fr; }
   .fr-result__hero { height: 240px; }
   .fr-result__body { padding: 1.5rem 1.25rem 3rem; }
-  .fr-result__actions { flex-direction: column; }
+  .fr-result__hero-content {
+    left: 1.2rem;
+    right: 1.2rem;
+    bottom: 1.25rem;
+  }
+  .fr-result__name { font-size: clamp(1.8rem, 10vw, 2.4rem); }
+  .fr-result__hero-pills,
+  .fr-result__hero-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .fr-suitability-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .fr-result__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .fr-result__actions .fr-btn,
+  .fr-result__actions .fr-btn--ghost {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+  .fr-dropdown__trigger {
+    min-height: 4.5rem;
+    align-items: flex-start;
+  }
+  .fr-dropdown__selected-badge {
+    max-width: 100%;
+    white-space: normal;
+  }
   /* Mobile: no position fixed, just let panel scroll within its max-height */
   .fr-dropdown__panel { position: absolute; left: 0; right: 0; }
+}
+
+@media (max-width: 420px) {
+  .fr-page { padding-inline: 0.75rem; }
+  .fr-card { padding: 1.2rem; }
+  .fr-result__body { padding-inline: 1rem; }
+  .fr-result__hero { height: 220px; }
+  .fr-result__hero-content {
+    left: 1rem;
+    right: 1rem;
+  }
 }

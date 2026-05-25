@@ -1,53 +1,56 @@
-# CropWise AI Web App
+# CropWise AI
 
-CropWise AI is a full-stack agriculture advisory application built with a
-React frontend and a Flask backend. It combines classical machine learning
-models for crop and fertilizer recommendation with a Gemini-powered AI advisor
-for region- and season-based crop guidance.
+CropWise AI is a full-stack agricultural decision-support application built
+with a React frontend and a Flask backend. It combines ensemble machine
+learning models for crop and fertilizer recommendation with a Gemini-powered
+AI advisor for region- and season-aware crop guidance.
 
-## What This Project Does
+## What the app includes
 
-CropWise AI currently includes:
+- Crop recommendation from soil nutrient and climate inputs
+- Fertilizer recommendation from soil, crop, and environmental inputs
+- AI crop advisor with English, Hindi, and Hinglish support
+- AI follow-up chat for practical crop questions
+- Gemini retry, failover, and local fallback handling
+- Weather-assisted autofill
+- Local browser storage for history, profile, and language preference
+- Mobile-friendly UI polish for crop, fertilizer, and history flows
 
-- Crop recommendation using ensemble ML models
-- Fertilizer recommendation using ensemble ML models
-- AI crop advisor based on location and cropping season
-- AI follow-up chat for crop-specific questions
-- Hindi, English, and Hinglish response support in the AI advisor
-- Gemini model failover for quota and overload handling
-- Rule-based fallback recommendations when live Gemini is unavailable
-- Voice input for location entry in supported browsers
-- Local browser storage for history, language, and farmer profile
-
-## Project Structure
+## Project structure
 
 ```text
 project-root/
 |-- Flask_API/
 |   |-- app.py
 |   |-- models/
+|   |-- tests/
 |   |-- requirements.txt
 |   `-- .env.example
-`-- React_Frontend/
-    `-- agri-ai/
-        |-- src/
-        |-- public/
-        `-- package.json
+|-- React_Frontend/
+|   `-- agri-ai/
+|       |-- public/
+|       |-- src/
+|       |-- package.json
+|       |-- vercel.json
+|       `-- .env.example
+|-- DATASET_AUDIT.md
+|-- DEPLOYMENT.md
+`-- INTERVIEW_PREP.md
 ```
 
-## Tech Stack
+## Tech stack
 
 - Frontend: React, Axios, React Router
-- Backend: Flask, Flask-CORS
+- Backend: Flask, Flask-CORS, Gunicorn
 - ML: scikit-learn, XGBoost, joblib, NumPy
 - AI: Google Gemini API
 - Styling: custom CSS
 
-## Features
+## Core modules
 
-### 1. Crop Recommendation
+### 1. Crop recommendation
 
-The crop recommender accepts:
+Inputs:
 
 - Nitrogen
 - Phosphorous
@@ -57,17 +60,17 @@ The crop recommender accepts:
 - Soil pH
 - Rainfall
 
-It uses multiple trained models and returns:
+Outputs:
 
 - `xgb_model_prediction`
 - `rf_model_prediction`
 - `knn_model_prediction`
-- probability scores for each model
+- model probability scores
 - `final_prediction`
 
-### 2. Fertilizer Recommendation
+### 2. Fertilizer recommendation
 
-The fertilizer recommender accepts:
+Inputs:
 
 - Temperature
 - Humidity
@@ -78,51 +81,50 @@ The fertilizer recommender accepts:
 - Potassium
 - Phosphorous
 
-It returns:
+Outputs:
 
 - `xgb_model_prediction`
 - `rf_model_prediction`
 - `svm_model_prediction`
-- probability scores for each model
+- model probability scores
 - `final_prediction`
 
-### 3. AI Crop Advisor
+### 3. AI crop advisor
 
-The AI advisor accepts:
+Inputs:
 
 - location or district
 - season: `Kharif`, `Rabi`, or `Zaid`
-- response language: `English`, `Hindi`, or `Hinglish`
+- language: `English`, `Hindi`, or `Hinglish`
 
-It provides 3 crop suggestions with:
+Outputs:
 
-- crop name
-- reason
-- confidence
+- top 3 crop suggestions
+- practical reasons
+- confidence level
 - season fit
 - water need
 - soil type
+- response metadata showing live or fallback mode
 
-When Gemini quota is unavailable, the backend automatically falls back to
-region-aware rule-based recommendations so the UI still works.
+### 4. AI follow-up chat
 
-### 4. AI Follow-up Chat
-
-After getting AI crop suggestions, users can ask follow-up questions such as:
+After AI recommendations, users can ask follow-up questions such as:
 
 - irrigation planning
-- pest concerns
 - intercropping
 - market demand
+- pest-related concerns
 
-The follow-up chat also supports English, Hindi, and Hinglish.
+Follow-up replies also return response metadata so the UI can distinguish
+between live Gemini responses and fallback guidance.
 
-## API Endpoints
+## API endpoints
 
 Base URL in local development:
 
 ```text
-http://localhost:5000
+http://127.0.0.1:5000
 ```
 
 Available routes:
@@ -135,7 +137,7 @@ Available routes:
 - `POST /ai-follow-up`
 - `GET /weather`
 
-### Example Crop Recommendation Response
+### Example crop recommendation response
 
 ```json
 {
@@ -149,7 +151,7 @@ Available routes:
 }
 ```
 
-### Example Fertilizer Recommendation Response
+### Example fertilizer recommendation response
 
 ```json
 {
@@ -163,56 +165,59 @@ Available routes:
 }
 ```
 
-### Example AI Recommendation Response
+### Example AI recommendation response
 
 ```json
-[
-  {
-    "crop": "Rice",
-    "reason": "Suitable for monsoon conditions and water-rich fields.",
-    "confidence": "High",
-    "season_fit": "Good",
-    "water_need": "High",
-    "soil_type": "Clay loam"
+{
+  "items": [
+    {
+      "crop": "Wheat",
+      "reason": "Fits cool Rabi conditions and fertile alluvial soil.",
+      "confidence": "High",
+      "season_fit": "Perfect fit",
+      "water_need": "Medium",
+      "soil_type": "Alluvial, Loamy"
+    }
+  ],
+  "meta": {
+    "mode": "live",
+    "source": "gemini",
+    "warning_code": null
   }
-]
+}
 ```
 
-## Local Setup
+### Example AI follow-up response
 
-### 1. Frontend
+```json
+{
+  "reply": "Wheat is usually better grown as a dedicated crop in this context.",
+  "meta": {
+    "mode": "fallback",
+    "source": "local",
+    "warning_code": "live_service_unavailable"
+  }
+}
+```
 
-Open PowerShell in:
+## Local setup
+
+### Frontend
 
 ```powershell
 cd React_Frontend\agri-ai
-```
-
-Install dependencies:
-
-```powershell
+copy .env.example .env
 npm install
-```
-
-Run development server:
-
-```powershell
 npm start
 ```
 
-The React app runs on:
+Default frontend URL:
 
 ```text
 http://localhost:3000
 ```
 
-### 2. Backend
-
-Open PowerShell in:
-
-```powershell
-cd Flask_API
-```
+### Backend
 
 Recommended Python runtime:
 
@@ -220,184 +225,126 @@ Recommended Python runtime:
 Python 3.11
 ```
 
-Create and use the standard backend virtual environment:
-
 ```powershell
+cd Flask_API
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-Create and configure your backend `.env` file:
-
-```env
-GEMINI_API_KEY=your_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,gemini-2.0-flash
-GEMINI_HTTP_REFERER=http://localhost:3000/
-```
-
-Install dependencies:
-
-```powershell
+copy .env.example .env
 pip install -r requirements.txt
-```
-
-Optional developer tools:
-
-```powershell
-pip install -r requirements-dev.txt
-```
-
-Run Flask:
-
-```powershell
 python app.py
 ```
 
-The Flask API runs on:
+Default backend URL:
 
 ```text
 http://127.0.0.1:5000
 ```
 
-## Free Hosting Setup
+### Environment variables
 
-The cleanest free deployment setup for this project is:
-
-- frontend on Vercel
-- backend on Render
-
-### Frontend on Vercel
-
-Project root:
-
-```text
-React_Frontend/agri-ai
-```
-
-Build command:
-
-```text
-npm run build
-```
-
-Output directory:
-
-```text
-build
-```
-
-Required environment variable:
+#### Frontend (`React_Frontend/agri-ai/.env`)
 
 ```env
-REACT_APP_API_BASE_URL=https://your-render-backend-url
+REACT_APP_API_BASE_URL=http://127.0.0.1:5000
 ```
 
-This repo already includes `vercel.json` so React Router routes like `/crop`,
-`/fertilizer`, and `/history` continue to work after refresh.
-
-### Backend on Render
-
-Project root:
-
-```text
-Flask_API
-```
-
-Build command:
-
-```text
-pip install -r requirements.txt
-```
-
-Start command:
-
-```text
-gunicorn app:app --bind 0.0.0.0:$PORT
-```
-
-Required environment variables:
+#### Backend (`Flask_API/.env`)
 
 ```env
-GEMINI_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_backend_only_gemini_api_key
 GEMINI_MODEL=gemini-2.5-flash
 GEMINI_FALLBACK_MODELS=gemini-2.5-flash-lite,gemini-2.0-flash
-GEMINI_HTTP_REFERER=https://your-vercel-frontend-url
+GEMINI_HTTP_REFERER=http://localhost:3000/
+OPENWEATHER_API_KEY=your_backend_only_openweather_api_key
 ```
 
-The repo root also includes `render.yaml` for a Render web service blueprint,
-and the backend exposes `GET /health` for deployment health checks.
+## Verification commands
 
-## Important Notes
+### Backend tests
 
-### Gemini API Key Restrictions
+```powershell
+cd Flask_API
+.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+```
 
-If you use a website-restricted Gemini API key in local development, make sure
-your Google Cloud key configuration allows:
+### Backend compile check
 
-- `http://localhost:3000/*`
-- `http://127.0.0.1:3000/*`
+```powershell
+cd Flask_API
+python -m py_compile app.py
+```
 
-This project sends a local referrer header from Flask to support that setup.
-
-### Gemini Rate Limits
-
-If Gemini responds with `429 Too Many Requests` or `503 Service Unavailable`,
-the app does not fail immediately:
-
-- the backend retries the active model for temporary `503` spikes
-- the backend can fail over to configured backup Gemini models
-- if live Gemini still does not succeed, the app falls back cleanly
-
-- `/ai-recommend` falls back to rule-based crop suggestions
-- `/ai-follow-up` returns a practical fallback advisory message
-- the crop UI shows a `Try Live AI Again` action when fallback mode is active
-
-### Python Environment Note
-
-The backend runtime target is now Python 3.11, and the dependency manifests are
-split into runtime and developer requirements.
-
-The ML models in this project were trained and serialized with older library
-versions. If crop or fertilizer prediction fails because of model loading
-issues, recreate the backend environment from `requirements.txt` first before
-debugging the model files themselves.
-
-The current backend `requirements.txt` has been refreshed from the working
-`venv312` environment and smoke-tested against both crop and fertilizer
-prediction endpoints. The file `requirements-working-venv312.txt` is kept as a
-reference snapshot of that known-good environment during migration to a single
-standard backend venv.
-
-The intended backend environment is now `Flask_API/.venv`. Older virtual
-environments such as `venv`, `venv38`, and `venv312` are legacy leftovers and
-should not be used for day-to-day development.
-
-## Browser Support
-
-- AI advisor works in modern Chromium-based browsers
-- Voice input depends on Web Speech API support
-- If voice input is unavailable in Brave, Chrome or Edge usually works better
-
-## Build Commands
-
-Frontend production build:
+### Frontend production build
 
 ```powershell
 cd React_Frontend\agri-ai
 npm run build
 ```
 
-## Current UX Improvements Included
+Note: on this machine the production build intermittently hits a Windows
+process-spawn `EPERM` issue unrelated to the app code. When that happens, use
+the running development build plus backend tests as the immediate sanity check.
 
-- improved AI advisor cards
-- live/fallback AI status indicator
-- retry action for live Gemini when fallback mode is active
-- Hindi and Hinglish language selector
-- smarter follow-up suggestions
-- better fertilizer result presentation
-- better city input styling in Chromium browsers
-- clearer voice input feedback and permission handling
+## Deployment summary
+
+Recommended free hosting setup:
+
+- frontend on Vercel
+- backend on Render
+
+For the full deployment checklist, see [DEPLOYMENT.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\DEPLOYMENT.md).
+
+### Vercel frontend
+
+- Project root: `React_Frontend/agri-ai`
+- Build command: `npm run build`
+- Output directory: `build`
+- Required env var: `REACT_APP_API_BASE_URL=https://your-render-backend-url`
+
+This repo includes `vercel.json` so React Router routes continue to work after
+refresh.
+
+### Render backend
+
+- Project root: `Flask_API`
+- Build command: `pip install -r requirements.txt`
+- Start command: `gunicorn app:app --bind 0.0.0.0:$PORT`
+- Health check path: `/health`
+
+Required backend env vars:
+
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `GEMINI_FALLBACK_MODELS`
+- `GEMINI_HTTP_REFERER`
+- `OPENWEATHER_API_KEY`
+
+## Practical notes
+
+### AI reliability
+
+If Gemini returns `429` or `503`, the backend does not fail immediately:
+
+- it retries temporary overload cases
+- it can fail over to backup Gemini models
+- it falls back to local crop guidance when live AI still does not succeed
+
+### Weather security
+
+OpenWeather access is handled through the backend. The frontend no longer needs
+or exposes a weather API key.
+
+### Browser support
+
+- AI advisor works best in modern Chromium-based browsers
+- voice input depends on Web Speech API support
+- if voice input misbehaves in Brave, Chrome or Edge usually works better
+
+## Project support files
+
+- Dataset notes: [DATASET_AUDIT.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\DATASET_AUDIT.md)
+- Interview prep: [INTERVIEW_PREP.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\INTERVIEW_PREP.md)
+- Deployment guide: [DEPLOYMENT.md](C:\Users\HP\Downloads\AgriAI_WebApp-main\AgriAI_WebApp-main\DEPLOYMENT.md)
 
 ## Attribution
 
@@ -405,11 +352,12 @@ This project is a modified derivative of the open-source GitHub repository
 [`venugopalkadamba/AgriAI_WebApp`](https://github.com/venugopalkadamba/AgriAI_WebApp).
 
 The current version includes substantial changes to branding, documentation,
-frontend experience, and AI-assisted advisory features, while retaining parts
-of the original project structure and recommendation workflow.
+frontend experience, AI-assisted advisory behavior, validation, and fallback
+handling while retaining parts of the original project structure and
+recommendation workflow.
 
 ## License
 
 This repository retains the `GPL-3.0` license from the original base project.
-If you distribute this project or modified versions of it, you should continue
-to comply with the terms of `GPL-3.0`. See the `LICENSE` file for details.
+If you distribute this project or modified versions of it, continue to comply
+with the terms of `GPL-3.0`. See the `LICENSE` file for details.

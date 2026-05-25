@@ -1162,12 +1162,29 @@
 @media (max-width: 640px) {
   .cr-page { padding: 2.5rem 0.75rem 4rem; }
   .cr-card { border-radius: var(--cr-radius); }
-  .cr-card__header { padding: 1.6rem 1.4rem 1.5rem; }
+  .cr-card__header {
+    padding: 1.6rem 1.4rem 1.5rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  .cr-card__title { font-size: clamp(2rem, 11vw, 2.7rem); }
+  .cr-card__summary { max-width: 100%; }
   .cr-header-btn { margin-left: 0; width: 100%; justify-content: center; }
   .cr-tabs { padding: 1.2rem 1.4rem 0; grid-template-columns: 1fr; }
   .cr-tab-panel { padding: 1.5rem 1.4rem 2rem; }
+  .cr-autofill-box { flex-direction: column; align-items: stretch; }
+  .cr-autofill-btn { width: 100%; justify-content: center; }
   .cr-inputs-grid--sliders { grid-template-columns: 1fr; }
   .cr-inputs-grid--sliders .cr-field:last-child:nth-child(2n+1) { grid-column: auto; }
+  .cr-field__slider-row {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .cr-field__number {
+    width: 100%;
+    min-width: 0;
+  }
   .cr-season-chips { grid-template-columns: 1fr; }
   .cr-profile-grid { grid-template-columns: 1fr; }
   .cr-models-grid { grid-template-columns: 1fr; }
@@ -1175,8 +1192,47 @@
   .ai-language-toggle { grid-template-columns: 1fr; }
   .ai-season-grid { grid-template-columns: 1fr; }
   .ai-cards-grid  { grid-template-columns: 1fr; }
+  .ai-results__title { font-size: 1.45rem; }
   .ai-results__header-actions { width: 100%; justify-content: stretch; }
   .ai-results__header-actions .cr-btn { width: 100%; justify-content: center; }
   .cr-result__hero { height: 250px; }
   .cr-result__body { padding: 1.5rem 1.2rem 3rem; }
+  .cr-result__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cr-result__actions .cr-btn,
+  .cr-result__actions .cr-btn--ghost {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+  .cr-followup__input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .cr-followup__send {
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+  .cr-followup__msg--user,
+  .cr-followup__msg--assistant {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .cr-page { padding-inline: 0.5rem; }
+  .cr-card__header,
+  .cr-tab-panel,
+  .cr-tabs { padding-inline: 1rem; }
+  .cr-result__hero { height: 220px; }
+  .cr-result__body { padding-inline: 1rem; }
+  .ai-card {
+    min-height: 0;
+  }
+  .ai-card__body {
+    padding-inline: 0.8rem;
+  }
 }

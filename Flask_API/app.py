@@ -180,13 +180,29 @@ def call_gemini(prompt, temperature=0.4):
             if delay:
                 time.sleep(delay)
 
-            response = requests.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                headers=headers,
-                params={"key": api_key},
-                json=payload,
-                timeout=15,
-            )
+            try:
+                response = requests.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                    headers=headers,
+                    params={"key": api_key},
+                    json=payload,
+                    timeout=15,
+                )
+            except requests.RequestException as exc:
+                app.logger.warning(
+                    "Gemini request transport failure: model=%s referer=%s model_attempt=%s/%s retry_attempt=%s/%s error=%s",
+                    model,
+                    http_referer or "<missing>",
+                    model_index,
+                    len(models),
+                    attempt,
+                    len(retry_delays),
+                    exc,
+                )
+                last_error = ("Gemini service is unavailable right now. Please try again later.", 503)
+                if model_index < len(models):
+                    break
+                return None, last_error
 
             try:
                 result = response.json()

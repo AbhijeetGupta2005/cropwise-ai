@@ -3,6 +3,7 @@ import sys
 import unittest
 from unittest.mock import MagicMock, patch
 
+import requests
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 FLASK_API_DIR = os.path.dirname(CURRENT_DIR)
@@ -78,6 +79,26 @@ class CropWiseApiTests(unittest.TestCase):
         self.assertEqual(len(data["items"]), 3)
         self.assertIn("crop", data["items"][0])
         self.assertEqual(data["items"][0]["source"], "fallback")
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "test-key"}, clear=False)
+    @patch("app.requests.post", side_effect=requests.RequestException("proxy down"))
+    def test_ai_recommend_falls_back_on_transport_failure(self, _mock_post):
+        response = self.client.post(
+            "/ai-recommend",
+            json={
+                "area": "Punjab",
+                "season": "Rabi",
+                "language": "english",
+            },
+        )
+
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data["meta"]["mode"], "fallback")
+        self.assertEqual(data["meta"]["source"], "local-fallback")
+        self.assertEqual(data["meta"]["warning"], "Gemini service is unavailable right now. Please try again later.")
+        self.assertEqual(data["meta"]["warning_code"], "live_service_unavailable")
+        self.assertEqual(len(data["items"]), 3)
 
     @patch("app.call_gemini", return_value=(None, ("Gemini temporarily unavailable", 503)))
     def test_ai_follow_up_uses_structured_fallback_response(self, _mock_call_gemini):
